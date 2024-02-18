@@ -436,6 +436,7 @@ void loop(void) {
 
     make_turn(newDirect); //this should hopefully always be a reverse when going from the block - which will be done under PID.  
     blocksCollected++; 
+    nearBlock = false;
 
   }
 
@@ -482,6 +483,7 @@ void loop(void) {
 
     get_next_turn(newDirect);
     make_turn(newDirect); // this should hopefully be a reverse, and after calibration manual reverse should go far back enough to allow rest to be done under PID.
+    nearStation = false;
   }
 
 }
