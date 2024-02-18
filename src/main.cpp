@@ -244,7 +244,7 @@ void get_next_turn_dummy(int newDirection)
 {
   //connect to pathfinding logic,
   //get absolute value of next turn
-  if (newDirection++ > 4) newDirection = 1;
+  if (newDirection++ > 3) newDirection = 1;
 }
 
 void get_next_turn(int newDirection)
