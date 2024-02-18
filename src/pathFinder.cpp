@@ -162,7 +162,7 @@ void initialise(node graph[numVert][numVert]) {
     graph[15][16].distance = 42; graph[16][15].distance = 42;
     graph[16][17].distance = 38; graph[17][16].distance = 38;
 
-    graph[0][3].direction = UP; graph[3][0].direction = DOWN;
+    graph[0][3].direction = UP; graph[3][0].direction = FINISH;
     graph[1][2].direction = RIGHT; graph[2][1].direction = LEFT; 
     graph[1][5].direction = DOWN; graph[5][1].direction = REVERSE;
     graph[1][8].direction = UP; graph[8][1].direction = DOWN;

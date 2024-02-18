@@ -10,7 +10,8 @@ enum direction
     LEFT,
     DOWN,
     REVERSE,
-    UNREACHABLE
+    FINISH,
+    UNREACHABLE,
 };
 typedef struct
 {
