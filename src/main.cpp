@@ -378,6 +378,8 @@ void loop(void) {
       leftWheel->setSpeed(30);
       rightWheel->setSpeed(30);
       delay(6000); //calibrate for however long it takes to cross the threshold.
+      leftWheel->setSpeed(0);
+      rightWheel->setSpeed(0);
       while(1); //We're now finished, infinite loop until power turned off.
     }
   }
