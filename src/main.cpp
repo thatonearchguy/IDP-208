@@ -4,6 +4,7 @@
 #include <Servo.h>
 #include <SPI.h>
 #include <Adafruit_TCS34725.h>
+//#include <DFRobot_TCS34725.h>
 #include <DFRobot_URM09.h>
 #include "pathFinder.h"
 
@@ -25,7 +26,9 @@ Adafruit_MotorShield AFMS = Adafruit_MotorShield();
 Adafruit_DCMotor *leftWheel = AFMS.getMotor(1);
 Adafruit_DCMotor *rightWheel = AFMS.getMotor(2);
 Adafruit_TCS34725 TCS = Adafruit_TCS34725(TCS34725_INTEGRATIONTIME_2_4MS, TCS34725_GAIN_4X);
+//DFRobot_TCS34725 TCS = DFRobot_TCS34725(&Wire, TCS34725_ADDRESS,TCS34725_INTEGRATIONTIME_2_4MS, TCS34725_GAIN_4X);
 DFRobot_URM09 URM09; 
+
 Servo doorServo;
 
 //Pin definitions
@@ -56,11 +59,12 @@ const uint8_t servoCloseAngle = 0;
 
 
 //PID
-uint8_t avgMotorSpeed = 150; 
-
-float Kp = 1;
-float Ki = 0.3;
-float Kd = 0.6;
+uint8_t avgMotorSpeed = 190; 
+const uint16_t rotDelayTime = 300;
+const uint16_t forwardDelayTime = 200;
+float Kp = 0.25;
+float Ki = 0;
+float Kd = 0;
 
 float prop;
 float integ;
@@ -73,7 +77,7 @@ bool finishedRun = false;
 
 //Colour sensor
 int idealLightValue = 350;
-uint8_t numAvgSamples = 5;
+uint8_t numAvgSamples = 2;
 
 //Junction detection
 bool leftJctDetect = false;
@@ -115,6 +119,8 @@ void calculate_pid(int valAvg, int *correct);
 void calculate_angle();
 float get_rotation_data();
 
+
+#ifdef ARDUINO_UNO
 ISR(TIMER0_COMPA_vect)
 {
   OCR0A += 192;
@@ -141,6 +147,39 @@ ISR(TIMER2_OVF_vect)
   }
   
 }
+#endif
+
+#ifdef ARDUINO_WIFI
+
+ISR(TCB0_INT_vect) 
+{
+  if(integrating) {
+      calculate_angle();
+  }
+  TCB0.INTFLAGS = TCB_CAPT_bm;
+}
+
+ISR(TCB1_INT_vect)
+{
+  timer2_overflows++;
+  if(timer2_overflows >= 5)
+  {
+    if(leftWheel->getSpeed() + rightWheel->getSpeed() == 0)
+    {
+      digitalWrite(blueLedPin, LOW);
+    }
+    else
+    {
+      digitalWrite(blueLedPin, !digitalRead(blueLedPin));
+    }
+    timer2_overflows = 0;
+  }
+  TCB1.INTFLAGS = TCB_CAPT_bm;
+}
+
+
+#endif
+
 
 
 void setup() {
@@ -150,8 +189,31 @@ void setup() {
   //timer0 - repurposed for delay and numerical integration.
   //we don't need millis or micros in our program, and Servo.h uses timer1 so we're safe to take over timer0.
   //but to not break delay, we must reimplement delay with the new timer overflow value. 
+  
+
+  if (!AFMS.begin()) {         // create with the default frequency 1.6KHz
+    Serial.println(F("Could not find Motor Shield. Check wiring."));
+    while (1);
+  }
+  /*
+  if (!IMU.begin()) {
+      Serial.println(F("Failed to initialize IMU!"));
+
+      while (1);
+  }
+  */
+  Serial.println("Hello!");
+
+  if(!TCS.begin()) {
+    Serial.println(F("Could not find colour sensor. Check wiring."));
+    while (1);
+  }
+
+  
+
   noInterrupts();
 
+  #ifdef ARDUINO_UNO
   //other modifications made in wiring.c
   OCR0A = 192;
   TIMSK0 |= B00000011; // Enable Timer Overflow Interrupt
@@ -163,25 +225,40 @@ void setup() {
   TCCR2B = 0;          // Init Timer2B
   TCCR2B |= B00000111; // Prescaler = 1024
   TIMSK2 |= B00000001; // Enable Timer Overflow Interrupt
+
+  #endif
+
+  #ifdef ARDUINO_WIFI
+  //TCB0 and TCB1 are free on ATMega4809
+  TCB0.CCMP = 0x7A12; 
+
+  TCB0.CTRLA = TCB_CLKSEL_CLKTCA_gc | TCB_ENABLE_bm | TCB_RUNSTDBY_bm;
+
+  TCB0.INTCTRL = TCB_CAPT_bm;
+
+  //using 64x scaler of TCA, results in 100ms tick
+
+  //TCB0 and TCB1 are free on ATMega4809
+  TCB1.CCMP = 0x3A9; 
+
+  TCB1.CTRLA = TCB_CLKSEL_CLKTCA_gc | TCB_ENABLE_bm | TCB_RUNSTDBY_bm;
+
+  TCB1.INTCTRL = TCB_CAPT_bm;
+
+  //using 64x scaler of TCA, results in 3ms tick
+
+  #endif
+
+
   interrupts();
-
-  if (!AFMS.begin()) {         // create with the default frequency 1.6KHz
-    Serial.println(F("Could not find Motor Shield. Check wiring."));
-    while (1);
-  }
-
-  if(!TCS.begin()) {
-    Serial.println(F("Could not find colour sensor. Check wiring."));
-    while (1);
-  }
-
+  /*
   if(!URM09.begin()) {
     Serial.println(F("Could not find ranging sensor. Check wiring."));
     while (1);
   }
-
+  */
   //Small distances, initialise with MEASURE_RANG_150
-  URM09.setModeRange(MEASURE_MODE_AUTOMATIC, MEASURE_RANG_150);
+  //URM09.setModeRange(MEASURE_MODE_AUTOMATIC, MEASURE_RANG_150);
 
   //set line sensor pins
   pinMode(colDetectPin, INPUT);
@@ -209,7 +286,7 @@ void setup() {
   leftWheel->run(FORWARD);
   rightWheel->run(FORWARD);
   digitalWrite(blueLedPin, HIGH); //indicate that robot is ready to operate, put in position and press button to begin. 
-  while (!digitalRead(buttonPin));
+  //while (!digitalRead(buttonPin));
 }
 
 void calculate_angle()
@@ -296,6 +373,7 @@ void pid_motor_regulate(int correction)
 }
 
 
+//god i hate this function if only we had the imu :((((
 void make_turn(uint8_t newDirect)
 {
   if(newDirect == REVERSE)
@@ -313,27 +391,45 @@ void make_turn(uint8_t newDirect)
     }
     yawAngle = 0;
     //this will make 180 degree rotations always go anticlockwise, but with the current geometry 180 degree turns should never be carried out.
-    int desiredAngle = (((currDirect - newDirect)+2)%4-2) * (PI/2); //gyro is in radians. one edge case - modulus any change above 180 degrees to save time
+    int desiredAngle = int((((currDirect - newDirect)+2)%4-2) * (PI/2)); //gyro is in radians. one edge case - modulus any change above 180 degrees to save time
     
-    leftWheel->setSpeed(avgMotorSpeed);
-    rightWheel->setSpeed(avgMotorSpeed);
+    leftWheel->setSpeed(180);
+    rightWheel->setSpeed(190);
+
+    //hardcode distance to the pivot point of the robot
+
+    leftWheel->run(FORWARD);
+    rightWheel->run(FORWARD);
+
+    delay(forwardDelayTime); //hardcode time
+
+    leftWheel->setSpeed(0);
+    leftWheel->setSpeed(0);
 
     if(desiredAngle > 0)
+    {
+      leftWheel->run(BACKWARD); //motors are connected backwards so this makes no sense just roll with it
+      rightWheel->run(FORWARD);
+    }
+    else
     {
       leftWheel->run(FORWARD);
       rightWheel->run(BACKWARD);
     }
-    else
-    {
-      leftWheel->run(BACKWARD);
-      rightWheel->run(FORWARD);
-    }
 
-    integrating = true;
+    leftWheel->setSpeed(avgMotorSpeed);
+    rightWheel->setSpeed(avgMotorSpeed);
+    
+
+    //integrating = true;
     //account for negative (counterclockwise) case
-    while(abs(yawAngle) < abs(desiredAngle)) //wait
+    //while(abs(yawAngle) < abs(desiredAngle)) //wait
 
-    integrating = false;
+    //integrating = false;
+    for(int i = 0; i < abs(((currDirect - newDirect)+2)%4-2); i ++)
+    {
+      delay(rotDelayTime); //180 degree turns (which should never happen) will just use double the rotation timeout. 
+    }
 
     leftWheel->setSpeed(0);
     rightWheel->setSpeed(0);
@@ -349,11 +445,13 @@ void make_turn(uint8_t newDirect)
 void loop(void) {
   
   uint16_t valAvg = get_colour_data();
+  Serial.println(valAvg);
   calculate_pid(valAvg, &correction);
+  Serial.println(correction);
   pid_motor_regulate(correction);
 
-  Serial.print(F("Current angle: "));
-  Serial.println(yawAngle);
+  //Serial.print(F("Current angle: "));
+  //Serial.println(yawAngle);
 
   if(turnReady)
   {
@@ -368,8 +466,9 @@ void loop(void) {
     rightWheel->setSpeed(0);
     if(!finishedRun)
     {
+      Serial.println("Turning!");
       make_turn(newDirect);
-      get_next_turn_dummy(newDirect);
+      get_next_turn(newDirect);
       turnReady = !turnReady;
     }
     else
@@ -383,7 +482,7 @@ void loop(void) {
       while(1); //We're now finished, infinite loop until power turned off.
     }
   }
-
+  /*
   if(nearBlock)
   {
     //could probably refactor but cba - it's more readable this way too
@@ -441,7 +540,8 @@ void loop(void) {
     nearBlock = false;
 
   }
-
+  */
+  /*
   if(nearStation)
   {
     // could probably refactor but cba - it's more readable this way too
@@ -487,5 +587,5 @@ void loop(void) {
     make_turn(newDirect); // this should hopefully be a reverse, and after calibration manual reverse should go far back enough to allow rest to be done under PID.
     nearStation = false;
   }
-
+  */
 }

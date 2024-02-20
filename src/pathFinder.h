@@ -1,9 +1,10 @@
+#include <Arduino.h>
 // Number of vertices in the graph
 #define numVert 18
 #define srcParent -1
 #define MAX_DIST 500
 
-enum direction
+enum direction : uint8_t
 {
     RIGHT,
     UP,
@@ -15,7 +16,7 @@ enum direction
 };
 typedef struct
 {
-    int distance;
+    uint8_t distance;
     direction direction;
 } node;
 

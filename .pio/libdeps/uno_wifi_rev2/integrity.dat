@@ -1,3 +1,6 @@
+bitbank2/BitBang_I2C@^2.2.1
 adafruit/Adafruit TCS34725@^1.4.4
+dfrobot/DFRobot_TCS34725@^1.0.0
+dfrobot/DFRobot_URM09@^1.2.0
 adafruit/Adafruit Motor Shield V2 Library@^1.1.3
 arduino-libraries/Arduino_LSM6DS3@^1.0.3

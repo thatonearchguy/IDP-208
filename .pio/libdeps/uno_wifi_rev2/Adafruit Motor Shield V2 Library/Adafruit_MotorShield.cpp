@@ -216,6 +216,7 @@ Adafruit_DCMotor::Adafruit_DCMotor(void) {
   MC = NULL;
   motornum = 0;
   PWMpin = IN1pin = IN2pin = 0;
+  currspeed = 0;
 }
 
 /**************************************************************************/
@@ -241,6 +242,10 @@ void Adafruit_DCMotor::run(uint8_t cmd) {
   }
 }
 
+uint8_t Adafruit_DCMotor::getSpeed() {
+  return currspeed;
+}
+
 /**************************************************************************/
 /*!
     @brief  Control the DC Motor speed/throttle
@@ -248,6 +253,7 @@ void Adafruit_DCMotor::run(uint8_t cmd) {
 */
 /**************************************************************************/
 void Adafruit_DCMotor::setSpeed(uint8_t speed) {
+  currspeed = speed;
   MC->setPWM(PWMpin, speed * 16);
 }
 
@@ -324,7 +330,7 @@ void Adafruit_StepperMotor::release(void) {
     {@link Adafruit_StepperMotor.setSpeed} to set the speed!
     @param  steps The number of steps we want to move
     @param  dir The direction to go, can be FORWARD or BACKWARD
-    @param  style How to perform each step, can be SINGLE, DOUBLE, INTERLEAVE or
+    @param  style How to perform each step, can be SINGLEE, DOUBLE, INTERLEAVE or
    MICROSTEP
 */
 /**************************************************************************/
@@ -356,7 +362,7 @@ void Adafruit_StepperMotor::step(uint16_t steps, uint8_t dir, uint8_t style) {
 /*!
     @brief  Move the stepper motor one step only, with no delays
     @param  dir The direction to go, can be FORWARD or BACKWARD
-    @param  style How to perform each step, can be SINGLE, DOUBLE, INTERLEAVE or
+    @param  style How to perform each step, can be SINGLEE, DOUBLE, INTERLEAVE or
    MICROSTEP
     @returns The current step/microstep index, useful for
    Adafruit_StepperMotor.step to keep track of the current location, especially
@@ -369,7 +375,7 @@ uint8_t Adafruit_StepperMotor::onestep(uint8_t dir, uint8_t style) {
   ocra = ocrb = 255;
 
   // next determine what sort of stepping procedure we're up to
-  if (style == SINGLE) {
+  if (style == SINGLEE) {
     if ((currentstep / (MICROSTEPS / 2)) % 2) { // we're at an odd step, weird
       if (dir == FORWARD) {
         currentstep += MICROSTEPS / 2;

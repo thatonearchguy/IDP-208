@@ -151,12 +151,12 @@ void initialise(node graph[numVert][numVert]) {
     graph[4][6].distance = 46; graph[6][4].distance = 46;
     graph[4][11].distance = 85; graph[11][4].distance = 85;
     graph[8][9].distance = 102; graph[9][8].distance = 102;
-    graph[8][15].distance = 76 + 103; graph[15][8].distance = 76 + 103; // bend
+    graph[8][15].distance = 179; graph[15][8].distance = 179; // bend
     graph[9][10].distance = 35; graph[10][9].distance = 35;
     graph[9][13].distance = 37; graph[13][9].distance = 37;
     graph[10][11].distance = 72; graph[11][10].distance = 72;
     graph[10][12].distance = 30; graph[12][10].distance = 30;
-    graph[11][16].distance = 76 + 63; graph[16][11].distance = 76 + 63;// bend
+    graph[11][16].distance = 139; graph[16][11].distance = 139;// bend
     graph[13][14].distance = 45; graph[14][13].distance = 45;
     graph[13][15].distance = 39; graph[15][13].distance = 39;
     graph[15][16].distance = 42; graph[16][15].distance = 42;

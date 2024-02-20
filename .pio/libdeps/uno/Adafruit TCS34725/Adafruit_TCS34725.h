@@ -40,6 +40,7 @@
 #endif
 
 #include <Adafruit_I2CDevice.h>
+#include <BitBang_I2C.h>
 
 #define TCS34725_ADDRESS (0x29)     /**< I2C address **/
 #define TCS34725_COMMAND_BIT (0x80) /**< Command bit **/
@@ -220,6 +221,7 @@ public:
   void disable();
 
 private:
+  //BBI2C i2c_dev;
   Adafruit_I2CDevice *i2c_dev = NULL; ///< Pointer to I2C bus interface
   boolean _tcs34725Initialised;
   tcs34725Gain_t _tcs34725Gain;

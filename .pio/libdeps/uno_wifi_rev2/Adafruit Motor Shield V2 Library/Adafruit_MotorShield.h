@@ -38,7 +38,7 @@
 #define BRAKE 3
 #define RELEASE 4
 
-#define SINGLE 1
+#define SINGLEE 1
 #define DOUBLE 2
 #define INTERLEAVE 3
 #define MICROSTEP 4
@@ -55,11 +55,13 @@ public:
   void setSpeedFine(uint16_t speed);
   void fullOn();
   void fullOff();
+  uint8_t getSpeed();
 
 private:
   uint8_t PWMpin, IN1pin, IN2pin;
   Adafruit_MotorShield *MC;
   uint8_t motornum;
+  uint8_t currspeed;
 };
 
 /** Object that controls and keeps state for a single stepper motor */
@@ -68,7 +70,7 @@ public:
   Adafruit_StepperMotor(void);
   void setSpeed(uint16_t);
 
-  void step(uint16_t steps, uint8_t dir, uint8_t style = SINGLE);
+  void step(uint16_t steps, uint8_t dir, uint8_t style = SINGLEE);
   uint8_t onestep(uint8_t dir, uint8_t style);
   void release(void);
 
