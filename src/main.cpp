@@ -35,26 +35,29 @@ Adafruit_TCS34725 TCS = Adafruit_TCS34725(TCS34725_INTEGRATIONTIME_2_4MS, TCS347
 DFRobot_VL53L0X VL53; 
 //DFRobot_URM09 URM09; 
 
-Servo doorServo;
+Servo doorServo; // servo motor for box collection mechanism
 
-//Pin definitions
-
-const uint8_t colDetectPin = 1;
-const uint8_t leftJctPin = 2;
-const uint8_t rightJctPin = 3;
-const uint8_t redLedPin = 4;
+// Digital Pin definitions
+// line sensors
+const uint8_t colDetectPin = 1; // line sensor for box colour detection
+const uint8_t leftJctPin = 2; // left line sensor
+const uint8_t rightJctPin = 3; // left line sensor
+// led 
+const uint8_t redLedPin = 4; 
 const uint8_t greenLedPin = 5;
 const uint8_t blueLedPin = 6;
-const uint8_t buttonPin = 7;
+
+const uint8_t buttonPin = 7; // start program button
+const uint8_t servoPin = 9;
+
 //colour sensor is i2C connected
 //IMU is i2C connected
 //motor shield is i2C connected
 //distance sensor is i2C connected
-const uint8_t servoPin = 9;
 
 //Calibration Values
 unsigned long lastMillis;
-const uint8_t timer0_of_ms = 3;
+const uint8_t timer0_of_ms = 3; 
 uint8_t timer2_overflows = 0;
 const uint8_t blueLedUpdRate = 4; //Hz
 const uint8_t timer2_of_ms = 16;
