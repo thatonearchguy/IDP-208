@@ -24,10 +24,14 @@
 #define RED 1
 #define BLACK 0
 
+// motor
 Adafruit_MotorShield AFMS = Adafruit_MotorShield();
-Adafruit_DCMotor *leftWheel = AFMS.getMotor(1);
-Adafruit_DCMotor *rightWheel = AFMS.getMotor(2);
-Adafruit_TCS34725 TCS = Adafruit_TCS34725(TCS34725_INTEGRATIONTIME_2_4MS, TCS34725_GAIN_4X);
+Adafruit_DCMotor *leftWheel = AFMS.getMotor(1); // port 1
+Adafruit_DCMotor *rightWheel = AFMS.getMotor(2); // port 2
+
+// Light sensor
+// period: 2.4ms, gain: 4x
+Adafruit_TCS34725 TCS = Adafruit_TCS34725(TCS34725_INTEGRATIONTIME_2_4MS, TCS34725_GAIN_4X); 
 DFRobot_VL53L0X VL53; 
 //DFRobot_URM09 URM09; 
 
