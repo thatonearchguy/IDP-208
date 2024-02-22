@@ -1,3 +1,4 @@
+//------------------------Include packages---------------------------
 #include <Arduino.h>
 #include <Adafruit_MotorShield.h>
 #include <Arduino_LSM6DS3.h>
@@ -23,7 +24,7 @@
 
 #define RED 1
 #define BLACK 0
-
+//------------------------Declare / Initialise components---------------------------
 // motor
 Adafruit_MotorShield AFMS = Adafruit_MotorShield();
 Adafruit_DCMotor *leftWheel = AFMS.getMotor(1); // port 1
@@ -33,7 +34,7 @@ Adafruit_DCMotor *rightWheel = AFMS.getMotor(2); // port 2
 // period: 2.4ms, gain: 4x
 Adafruit_TCS34725 TCS = Adafruit_TCS34725(TCS34725_INTEGRATIONTIME_2_4MS, TCS34725_GAIN_4X); 
 DFRobot_VL53L0X VL53; 
-//DFRobot_URM09 URM09; 
+// DFRobot_URM09 URM09; 
 
 Servo doorServo; // servo motor for box collection mechanism
 
@@ -48,24 +49,26 @@ const uint8_t greenLedPin = 5;
 const uint8_t blueLedPin = 6;
 
 const uint8_t buttonPin = 7; // start program button
-const uint8_t servoPin = 9;
+const uint8_t servoPin = 9; // servo motor for box collection mechanism
 
-//colour sensor is i2C connected
-//IMU is i2C connected
-//motor shield is i2C connected
-//distance sensor is i2C connected
+// colour sensor is i2C connected
+// IMU is i2C connected
+// motor shield is i2C connected
+// distance sensor is i2C connected
 
-//Calibration Values
+// Calibration Values
+// for angle calculation from gyroscope (not used)
 unsigned long lastMillis;
 const uint8_t timer0_of_ms = 3; 
-uint8_t timer2_overflows = 0;
-const uint8_t blueLedUpdRate = 4; //Hz
-const uint8_t timer2_of_ms = 16;
-const uint8_t blue_led_timeouts = uint8_t((1000) / (blueLedUpdRate * timer2_of_ms));
+// for flasjing blue LED during movement of robot
+uint8_t timer2_overflows = 0; // initialising timer for flashing loop
+const uint8_t blueLedUpdRate = 4; // flashing rate Hz
+const uint8_t timer2_of_ms = 16; // ISR (looping) period set manually
+const uint8_t blue_led_timeouts = uint8_t((1000) / (blueLedUpdRate * timer2_of_ms)); // determines when led flashes
 
 //Colour sensor
-int idealLightValue = 350;
-uint8_t numAvgSamples = 2;
+int idealLightValue = 350; // threshold value for white
+uint8_t numAvgSamples = 2; // take average of numAvgSamples light sensor reading
 
 //Ranging Sensor
 uint8_t block_threshold_mm = 90; //adjust for chassis geometry
@@ -76,9 +79,8 @@ uint16_t station_reverse_timeout_ms = 500;
 uint16_t station_approach_timeout_ms = 500;
 
 //Servo
-const uint8_t servoOpenAngle = 95;
-const uint8_t servoCloseAngle = 0;
-
+const uint8_t servoOpenAngle = 60;
+const uint8_t servoCloseAngle = 130;
 
 //PID
 uint8_t avgMotorSpeed = 190; 
@@ -119,8 +121,6 @@ uint8_t destinationNode;
 uint8_t blockIndices[] = {7, 12, 14, 17};
 uint8_t blocksCollected = 0;
 
-
-
 //IMU
 float yawAngle = 0;
 float yawData;
@@ -128,6 +128,7 @@ bool turnReady = false;
 uint8_t newDirect = 1;
 bool integrating = false;
 
+//------------------------Declare helper functions---------------------------
 bool verify_turn();
 void jct_int_handler();
 void make_turn(uint8_t* new_direc);
@@ -316,21 +317,21 @@ void setup() {
   digitalWrite(greenLedPin, LOW);
   doorServo.attach(servoPin);
 }
-
+//------------------------Define helper functions---------------------------
 // Function to change the position of the servo motor to open door
 // Parameters: void
 // Returns: void
 void open_door() {
-  for (int pos = servoCloseAngle; pos<= servoOpenAngle; pos++){
+  for (int pos = servoCloseAngle; pos>= servoOpenAngle; pos--){
     doorServo.write(pos);
-    delay(25);
+    delay(15);
   }
 }
 // Function to change the position of the servo motor to close door 
 // Parameters: void
 // Returns: void
 void close_door() {
-  for (int pos = servoOpenAngle; pos<= servoCloseAngle; pos--){
+  for (int pos = servoOpenAngle; pos<= servoCloseAngle; pos++){
     doorServo.write(pos);
     delay(25);
   }
