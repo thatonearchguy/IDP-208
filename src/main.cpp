@@ -307,6 +307,26 @@ void setup() {
   //while (!digitalRead(buttonPin));
   digitalWrite(redLedPin, LOW);
   digitalWrite(greenLedPin, LOW);
+  doorServo.attach(servoPin);
+}
+
+// Function to change the position of the servo motor to open door
+// Parameters: void
+// Returns: void
+void open_door() {
+  for (int pos = servoCloseAngle; pos<= servoOpenAngle; pos++){
+    doorServo.write(pos);
+    delay(25);
+  }
+}
+// Function to change the position of the servo motor to close door 
+// Parameters: void
+// Returns: void
+void close_door() {
+  for (int pos = servoOpenAngle; pos<= servoCloseAngle; pos--){
+    doorServo.write(pos);
+    delay(25);
+  }
 }
 
 void calculate_angle()
@@ -559,8 +579,9 @@ void loop(void) {
     leftWheel->setSpeed(0);
     rightWheel->setSpeed(0);
 
-    doorServo.write(servoOpenAngle); //extra tolerance
-    delay(400);
+    open_door();
+    //doorServo.write(servoOpenAngle); //extra tolerance
+    //delay(400);
   
     while (int(VL53.getDistance()) < block_interior_threshold_mm)
     {
@@ -573,8 +594,10 @@ void loop(void) {
     leftWheel->setSpeed(0);
     rightWheel->setSpeed(0);
     //close door
-    doorServo.write(servoCloseAngle);
-    delay(400); //wait for servo to move. 
+    close_door();
+    
+    /*doorServo.write(servoCloseAngle);
+    delay(400); //wait for servo to move. */
 
     bool red = digitalRead(colDetectPin);
 
@@ -619,8 +642,9 @@ void loop(void) {
     leftWheel->setSpeed(0);
     rightWheel->setSpeed(0);
     // open door
-    doorServo.write(servoOpenAngle);
-    delay(400); // wait for servo to move.
+    open_door();
+    /* doorServo.write(servoOpenAngle);
+    delay(400); // wait for servo to move. */
 
     //reverse out
     leftWheel->run(BACKWARD);
@@ -630,9 +654,10 @@ void loop(void) {
     rightWheel->setSpeed(50);
 
     delay(station_reverse_timeout_ms);
-
-    doorServo.write(servoCloseAngle);
-    delay(50);
+    
+    close_door();
+    /* doorServo.write(servoCloseAngle);
+    delay(50); */
 
     int blockNode = 0; //YIPEEE RETURN TO BASE (will be overriden by the actual block index if not all of them have been picked up)
     //this also has the advantage of very easily being able to add the extension task of just taking blocks from 0 to the stations.
