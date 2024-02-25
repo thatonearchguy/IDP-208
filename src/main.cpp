@@ -140,22 +140,28 @@ float get_rotation_data();
 
 
 #ifdef ARDUINO_UNO
+//interrupt service routine for COMPA ATMega328p interrupt on Timer0. Used for numerically integrating gyroscope data at 333Hz
 ISR(TIMER0_COMPA_vect)
 {
+  //preload counter value to trip every 3ms with prescaler - see datasheet
   OCR0A += 192;
   if(integrating) {
-    calculate_angle();
+    calculate_angle(); 
   }
 }
 
-
+//interrupt service routine for Timer2
 ISR(TIMER2_OVF_vect)
 {
   timer2_overflows++;
+  //since max timer length is 16ms, we count how many times the timer has overflowed (15) before we toggle the state of the LED.
+  //gives us a near perfect 2Hz flash rate.
   if(timer2_overflows >= blue_led_timeouts)
   {
+    //getSpeed() is a custom method implemented in the Adafruit Motor Shield library that keeps track of the *commanded* motor speed in a private attribute.
     if(leftWheel->getSpeed() + rightWheel->getSpeed() == 0)
     {
+      //satisfies requirement to only have LED flashing during motion.
       digitalWrite(blueLedPin, LOW);
     }
     else
@@ -170,16 +176,21 @@ ISR(TIMER2_OVF_vect)
 
 #ifdef ARDUINO_WIFI
 
+//ATMega4809 has 16-bit timers that can specify a significantly higher timeout.
+
+//We hijack TCB0 and TCB1 as they are unused in the Arduino framework. We can't set a period but we can set a compare value and the slowest prescaler (64x off TCA) to give up to 100ms tick rate.
 ISR(TCB0_INT_vect) 
 {
   if(integrating) {
       calculate_angle();
   }
+  //tell TCB0 to interrupt again once the compare value is reached. No need to increment counter like on 328p as we can set an upper bound for interrupting.
   TCB0.INTFLAGS = TCB_CAPT_bm;
 }
 
 ISR(TCB1_INT_vect)
 {
+  //16-bit timer allows us to interrupt less frequently and maintain 2hz flash rate. We opt for a 50ms tick, so every 5 = 250ms between each state change of LED.
   timer2_overflows++;
   if(timer2_overflows >= 5)
   {
@@ -205,16 +216,12 @@ void setup() {
 
   Serial.begin(9600);
 
-  //timer0 - repurposed for delay and numerical integration.
-  //we don't need millis or micros in our program, and Servo.h uses timer1 so we're safe to take over timer0.
-  //but to not break delay, we must reimplement delay with the new timer overflow value. 
-  
-  
   if (!AFMS.begin()) {         // create with the default frequency 1.6KHz
     Serial.println(F("Could not find Motor Shield. Check wiring."));
     while (1);
   }
-  
+
+  //Binned IMU because Uno Rev2 WiFi i2C implementation is defective.
   /*
   if (!IMU.begin()) {
       Serial.println(F("Failed to initialize IMU!"));
@@ -229,22 +236,25 @@ void setup() {
     while (1);
   }
 
+  //Initialise ToF sensor (VL53L0X) in continuous, high accuracy mode. 
   VL53.begin(0x50);
   VL53.setMode(VL53.eContinuous,VL53.eHigh);
-
   VL53.start();
   
-
+  //timer0 - repurposed for delay and numerical integration.
+  //we don't need millis or micros in our program, and Servo.h uses timer1 so we're safe to take over timer0.
+  //but to not break delay, we must adjust the microseconds per tick value in Arduino core's wiring.c
   noInterrupts();
 
+  //platformio.ini has a compiler flag that will reveal the appropriate timer setup code for ATMega328p or ATMega4809 depending on which Arduino is being used. 
   #ifdef ARDUINO_UNO
   //other modifications made in wiring.c
   OCR0A = 192;
   TIMSK0 |= B00000011; // Enable Timer Overflow Interrupt
 
   //use timer2 to blink blue LED while in motion.
-  //timer2 on ATMega328p is 8 bit only, so maximum interval with 1024 prescaler is 16ms. so we simply wait for 31 interrupts before toggling the LED. not ideal... but hey ho that's what we gotta do in the microcontroller world.
-  //can't use timer1 because we need it for the servo and the numerical integration :)))
+  //timer2 on ATMega328p is 8 bit only, so maximum interval with 1024 prescaler is 16ms. so we simply wait for 15 interrupts before toggling the LED. not ideal... but hey ho that's what we gotta do in the microcontroller world.
+  //can't use timer1 because we need it for the servo (Servo.h takes exclusive control of timer1)
   TCCR2A = 0;          // Init Timer2A
   TCCR2B = 0;          // Init Timer2B
   TCCR2B |= B00000111; // Prescaler = 1024
@@ -254,22 +264,20 @@ void setup() {
 
   #ifdef ARDUINO_WIFI
   //TCB0 and TCB1 are free on ATMega4809
-  TCB0.CCMP = 0x7A12; 
+  //using 64x scaler of TCA, results in 50ms tick
 
-  TCB0.CTRLA = TCB_CLKSEL_CLKTCA_gc | TCB_ENABLE_bm | TCB_RUNSTDBY_bm;
+  TCB0.CCMP = 0x1D3; //set compare value for 3ms tick
+
+  TCB0.CTRLA = TCB_CLKSEL_CLKTCA_gc | TCB_ENABLE_bm | TCB_RUNSTDBY_bm; //specify TCA 64x scaler, start TCB0 and use Run Standby mode.
 
   TCB0.INTCTRL = TCB_CAPT_bm;
 
-  //using 64x scaler of TCA, results in 50ms tick
 
-  //TCB0 and TCB1 are free on ATMega4809
-  TCB1.CCMP = 0x1D3; 
+  TCB1.CCMP = 0x7A12; 
 
-  TCB1.CTRLA = TCB_CLKSEL_CLKTCA_gc | TCB_ENABLE_bm | TCB_RUNSTDBY_bm;
+  TCB1.CTRLA = TCB_CLKSEL_CLKTCA_gc | TCB_ENABLE_bm | TCB_RUNSTDBY_bm; //specify TCA 64x scaler, start TCB1 and use Run Standby mode.
 
   TCB1.INTCTRL = TCB_CAPT_bm;
-
-  //using 64x scaler of TCA, results in 3ms tick
 
   #endif
 
@@ -302,7 +310,7 @@ void setup() {
 
   initialise(graph);
 
-  //set route for first package#
+  //set route for first package
   destinationNode = 7;
   dijkstra(graph, 0, destinationNode, bestPath, bestPathDirections, distance);
   returnDirection(graph, bestPath, bestPathDirections);
@@ -337,11 +345,17 @@ void close_door() {
   }
 }
 
+// Function to numerically integrate gyro data to calculate the yaw angle 
+// Parameters: void
+// Returns: void
 void calculate_angle()
 {
   yawAngle += 0.5 * (yawData + get_rotation_data()) * (timer0_of_ms / 1e3);
 }
 
+// Interrupt handler for junction detection 
+// Parameters: void
+// Returns: void
 void jct_int_handler()
 {
   leftJctDetect = digitalRead(leftJctPin);
@@ -352,7 +366,9 @@ void jct_int_handler()
 
 }
 
-
+// PID calculator for line following
+// Parameters: int valAvg - averaged colour temperature reading, int* correct - pointer to correction variable
+// Returns: void
 void calculate_pid(int valAvg, int* correct)
 {
   int error = idealLightValue - valAvg;
@@ -366,6 +382,9 @@ void calculate_pid(int valAvg, int* correct)
   lastError = error;
 }
 
+// Decrements direction angle for a dummy clockwise rotation pattern
+// Parameters: uint8_t* newDirection - pointer to direction variable
+// Returns: void
 void get_next_turn_dummy_clockwise(uint8_t* newDirection)
 {
   //connect to pathfinding logic,
@@ -374,6 +393,9 @@ void get_next_turn_dummy_clockwise(uint8_t* newDirection)
   if (*newDirection == 255) *newDirection = 3;
 }
 
+// Increments direction angle for a dummy anticlockwise rotation pattern
+// Parameters: uint8_t* newDirection - pointer to direction variable
+// Returns: void
 void get_next_turn_dummy_anticlockwise(uint8_t* newDirection)
 {
   //connect to pathfinding logic,
@@ -382,6 +404,9 @@ void get_next_turn_dummy_anticlockwise(uint8_t* newDirection)
   if (*newDirection > 3) *newDirection = 0;
 }
 
+// Updates direction angle with that of the next node, generated by the pathfinding.
+// Parameters: uint8_t* newDirection - pointer to direction variable
+// Returns: void
 void get_next_turn(uint8_t* newDirection)
 {
   currNode ++;
@@ -403,7 +428,9 @@ void get_next_turn(uint8_t* newDirection)
 
 
 
-
+// Gets gyroscope data for numerical integration to calculate angle
+// Parameters: void
+// Returns: float
 float get_rotation_data()
 {
   float x, y, z;
@@ -414,7 +441,9 @@ float get_rotation_data()
   return z;
 }
 
-
+// Gets colour data from the colour sensor and averages by numAvgSamples
+// Parameters: void
+// Returns: uint16_t
 uint16_t get_colour_data()
 {
   uint16_t r, g, b, c;
@@ -427,6 +456,9 @@ uint16_t get_colour_data()
   return int(valSum/numAvgSamples);
 }
 
+// Applies correction to the motor speeds to follow the line
+// Parameters: int correction - correction variable
+// Returns: void
 void pid_motor_regulate(int correction)
 {
   leftWheel->setSpeed(constrain((avgMotorSpeed - correction), 0, 255));
@@ -435,6 +467,10 @@ void pid_motor_regulate(int correction)
 
 
 //god i hate this function if only we had the imu :((((
+
+// Changes the direction of the robot to the specified new direction. Makes initial rotation manually before scanning for new line with the colour sensor
+// Parameters: uint8_t* newDirect - pointer to new direction variable
+// Returns: void
 void make_turn(uint8_t* newDirect)
 {
   Serial.print("Turning, new direction: ");
@@ -540,7 +576,7 @@ void loop(void) {
   //Serial.print(F("Current angle: "));
   //Serial.println(yawAngle);
 
-  if(turnReady)
+  if(turnReady) //if a junction was detected
   {
     /*
 
@@ -551,17 +587,17 @@ void loop(void) {
     */
     leftWheel->setSpeed(0);
     rightWheel->setSpeed(0);
-    if(!finishedRun)
+    if(!finishedRun) //if we haven't picked up all the blocks
     {
       Serial.println("Turning!");
       //make_turn(1);
-      get_next_turn(&newDirect);
-      make_turn(&newDirect);
-      turnReady = !turnReady;
+      get_next_turn(&newDirect); //get the next turn from the navigation
+      make_turn(&newDirect); //make the robot turn to this new direction
+      turnReady = !turnReady; //reset flag
     }
-    else
+    else //if we're finished we've reached the starting box
     {
-      //PID impossible due to geometry of starting region.
+      //PID impossible due to geometry of starting region, so we manually drive until we cross the threshold.
       leftWheel->setSpeed(30);
       rightWheel->setSpeed(30);
       delay(6000); //calibrate for however long it takes to cross the threshold.
@@ -577,7 +613,7 @@ void loop(void) {
 
     avgMotorSpeed = 100; //slow down robot
     //move forward under PID until distance sensor trips
-    while(int(VL53.getDistance()) > block_threshold_mm) //can substitute for ToF sensor depending on chassis geometry and accuracy requirements. 
+    while(int(VL53.getDistance()) > block_threshold_mm)
     {
       uint16_t valAvg = get_colour_data();
       calculate_pid(valAvg, &correction);
@@ -590,15 +626,14 @@ void loop(void) {
     open_door();
     //doorServo.write(servoOpenAngle); //extra tolerance
     //delay(400);
-  
+    
+    //in case line ends early, we use manual operation to drive as close as possible to the block. 
     while (int(VL53.getDistance()) < block_interior_threshold_mm)
     {
       leftWheel->setSpeed(50);
       rightWheel->setSpeed(50);
     }
-
-    delay(2000);
-    //door is raised so PID is impossible.
+    
     leftWheel->setSpeed(0);
     rightWheel->setSpeed(0);
     //close door
@@ -606,7 +641,7 @@ void loop(void) {
     
     /*doorServo.write(servoCloseAngle);
     delay(400); //wait for servo to move. */
-
+    //scan block colour (sensor can be placed next to the castor)
     bool red = digitalRead(colDetectPin);
 
     int stationNode;
@@ -678,7 +713,7 @@ void loop(void) {
     dijkstra(graph, destinationNode, blockNode, bestPath, bestPathDirections, distance);
 
     destinationNode = blockNode;
-    digitalWrite(redLedPin, LOW);
+    digitalWrite(redLedPin, LOW); //don't care about the colour, just write both GPIOs to low.
     digitalWrite(greenLedPin, LOW);
     get_next_turn(&newDirect);
     make_turn(&newDirect); // this should hopefully be a reverse, and after calibration manual reverse should go far back enough to allow rest to be done under PID.
