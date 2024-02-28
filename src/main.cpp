@@ -278,7 +278,7 @@ void loop(void) {
   
 }
 
-
+//Very arduino-esque - until this point lol, now it gets real
 
 //------------------------Define helper functions---------------------------
 // Function to change the position of the servo motor to open door
@@ -444,14 +444,14 @@ void delay_under_manual(uint16_t timeout, bool reverse = false)
   rightWheel->setSpeed(190);
 
   //hardcode distance to the pivot point of the robot
+  leftWheel->run(BACKWARD);
+  rightWheel->run(BACKWARD);
+
   if(!reverse)
   {
     leftWheel->run(FORWARD);
     rightWheel->run(FORWARD);
   }
-  
-  leftWheel->run(BACKWARD);
-  rightWheel->run(BACKWARD);
 
   delay(timeout); //hardcode time
 
@@ -513,9 +513,6 @@ void set_motor_directions(int* desAng)
 // Changes the direction of the robot to the specified new direction. Makes initial rotation manually before scanning for new line with the colour sensor
 // Parameters: uint8_t* newDirect - pointer to new direction variable
 // Returns: void
-
-
-
 void make_turn(uint8_t* newDirect)
 {
   LOG_INLINE("Turning, ");

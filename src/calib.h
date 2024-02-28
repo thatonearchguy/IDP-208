@@ -2,7 +2,6 @@
 
 // Digital Pin definitions
 // line sensors
-const uint8_t colDetectPin = 1; // line sensor for box colour detection
 
 #define ABS_FORWARD 1
 #define ABS_BACKWARD 3
@@ -19,6 +18,7 @@ const uint8_t colDetectPin = 1; // line sensor for box colour detection
 #define RED 1
 #define BLACK 0
 
+const uint8_t colDetectPin = 1; // line sensor for box colour detection
 const uint8_t leftJctPin = 2; // left line sensor
 const uint8_t rightJctPin = 3; // left line sensor
 // led 
