@@ -1,6 +1,6 @@
 #include <Arduino.h>
 // Number of vertices in the graph
-#define numVert 18
+#define numVert 20
 #define srcParent -1
 #define MAX_DIST 500
 
