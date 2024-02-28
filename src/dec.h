@@ -51,3 +51,6 @@ void start_new_journey(uint8_t* sourceNode, uint8_t* destinationNode, uint8_t* n
 void celebrate_and_finish();
 void set_motor_directions(int* desAng);
 void delay_under_manual(uint16_t timeout);
+uint16_t get_colour_data();
+void pid_motor_regulate(int correction);
+void get_next_turn(uint8_t* newDirection);

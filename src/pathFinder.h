@@ -1,3 +1,6 @@
+#ifndef PATHFINDER_H
+#define PATHFINDER_H
+
 #include <Arduino.h>
 // Number of vertices in the graph
 #define numVert 20
@@ -46,3 +49,5 @@ void returnDirection(node graph[numVert][numVert], int bestPath[numVert], direct
 // ------- PRIMARY FUNCTIONS -------
 // Implements dijkstra algorithm (to be improved if need be)
 void dijkstra(node graph[numVert][numVert], int source, int destination, int bestPath[numVert], direction bestPathDirections[numVert], int distance[numVert]);
+
+#endif
