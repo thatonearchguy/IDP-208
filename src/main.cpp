@@ -72,7 +72,7 @@ uint8_t numAvgSamples = 2; // take average of numAvgSamples light sensor reading
 
 //Ranging Sensor
 uint8_t block_threshold_mm = 90; //adjust for chassis geometry
-uint8_t block_interior_threshold_mm = 50;
+uint8_t block_interior_threshold_mm = 20;
 uint8_t wall_threshold_mm = 80; //adjust for station geometry
 
 uint16_t station_reverse_timeout_ms = 500;
@@ -84,10 +84,10 @@ const uint8_t servoCloseAngle = 130;
 
 //PID
 uint8_t avgMotorSpeed = 190; 
-const uint16_t rotDelayTime = 60;
-const uint16_t rotColLineThreshold = 400;
-const uint16_t forwardDelayTime = 580;
-float Kp = 0.12;
+const uint16_t rotDelayTime = 160;
+const uint16_t rotColLineThreshold = 180;
+const uint16_t forwardDelayTime = 350;
+float Kp = 0.15;
 float Ki = 0;
 float Kd = 0;
 const int max_integ_val = 300;
@@ -231,15 +231,22 @@ void setup() {
   */
   Serial.println("Hello!");
   
+
+  //Initialise ToF sensor (VL53L0X) in continuous, high accuracy mode. 
+  delay(300);
+  VL53.begin(0x50);
+  delay(50);
+  VL53.setMode(VL53.eContinuous,VL53.eHigh);
+  delay(50);
+  VL53.start();
+  delay(600);
+
   if(!TCS.begin()) {
     Serial.println(F("Could not find colour sensor. Check wiring."));
     while (1);
   }
 
-  //Initialise ToF sensor (VL53L0X) in continuous, high accuracy mode. 
-  VL53.begin(0x50);
-  VL53.setMode(VL53.eContinuous,VL53.eHigh);
-  VL53.start();
+  
   
   //timer0 - repurposed for delay and numerical integration.
   //we don't need millis or micros in our program, and Servo.h uses timer1 so we're safe to take over timer0.
@@ -534,8 +541,8 @@ void make_turn(uint8_t* newDirect)
 
 
 
-    leftWheel->setSpeed(avgMotorSpeed);
-    rightWheel->setSpeed(avgMotorSpeed);
+    leftWheel->setSpeed(120);
+    rightWheel->setSpeed(120);
     
     //integrating = true;
     //account for negative (counterclockwise) case
@@ -544,13 +551,14 @@ void make_turn(uint8_t* newDirect)
     //integrating = false;
 
     //allow for 180 degree turns
-    for(int i = 0; i < desiredAngle; i+=90)
+    for(int i = 0; i < abs(desiredAngle); i+=90)
     {
       delay(rotDelayTime); //allow robot to move away from original line 
       uint16_t valAvg = get_colour_data();
       while(valAvg < rotColLineThreshold)
       {
         valAvg = get_colour_data();
+        Serial.println(valAvg);
       } //wait until line detected again
 
     }
@@ -611,7 +619,7 @@ void loop(void) {
   {
     //could probably refactor but cba - it's more readable this way too
 
-    avgMotorSpeed = 100; //slow down robot
+    avgMotorSpeed = 140; //slow down robot
     //move forward under PID until distance sensor trips
     while(int(VL53.getDistance()) > block_threshold_mm)
     {
@@ -623,21 +631,23 @@ void loop(void) {
     leftWheel->setSpeed(0);
     rightWheel->setSpeed(0);
 
-    open_door();
+    //open_door();
     //doorServo.write(servoOpenAngle); //extra tolerance
     //delay(400);
-    
+    /*
     //in case line ends early, we use manual operation to drive as close as possible to the block. 
-    while (int(VL53.getDistance()) < block_interior_threshold_mm)
+    while (int(VL53.getDistance()) > block_interior_threshold_mm)
     {
-      leftWheel->setSpeed(50);
-      rightWheel->setSpeed(50);
+      leftWheel->setSpeed(130);
+      rightWheel->setSpeed(140);
     }
+    
     
     leftWheel->setSpeed(0);
     rightWheel->setSpeed(0);
+    */
     //close door
-    close_door();
+    //close_door();
     
     /*doorServo.write(servoCloseAngle);
     delay(400); //wait for servo to move. */
@@ -657,6 +667,7 @@ void loop(void) {
     }
     //block is now captured, load route for appropriate destination.
     dijkstra(graph, destinationNode, stationNode, bestPath, bestPathDirections, distance);
+    returnDirection(graph, bestPath, bestPathDirections);
     destinationNode = stationNode;
     get_next_turn(&newDirect);
     
@@ -711,7 +722,7 @@ void loop(void) {
     }
 
     dijkstra(graph, destinationNode, blockNode, bestPath, bestPathDirections, distance);
-
+    returnDirection(graph, bestPath, bestPathDirections);
     destinationNode = blockNode;
     digitalWrite(redLedPin, LOW); //don't care about the colour, just write both GPIOs to low.
     digitalWrite(greenLedPin, LOW);
