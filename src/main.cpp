@@ -3,7 +3,6 @@
 #include <Adafruit_MotorShield.h>
 #include <Arduino_LSM6DS3.h>
 #include <Servo.h>
-#include <SPI.h>
 #include <Adafruit_TCS34725.h>
 //#include <DFRobot_TCS34725.h>
 #include <DFRobot_VL53L0X.h>
@@ -12,6 +11,15 @@
 #include "calib.h" //calibration constants
 #include "dec.h" //global variables & function prototypes
 
+#define DEBUG 0 //added debug switch to save some SRAM (optimise out all the serial calls)
+
+#if DEBUG
+  #define LOG_NEWLINE(msg) Serial.println(msg)
+  #define LOG_INLINE(msg) Serial.print(msg)
+#else
+  #define LOG_NEWLINE(msg)
+  #define LOG_INLINE(msg)
+#endif
 
 //------------------------Declare / Initialise components---------------------------
 // motor
@@ -29,97 +37,25 @@ Servo doorServo; // servo motor for box collection mechanism
 
 uint8_t currDirect = ABS_FORWARD; //default is forwards
 
-#ifdef ARDUINO_UNO
-//interrupt service routine for COMPA ATMega328p interrupt on Timer0. Used for numerically integrating gyroscope data at 333Hz
-ISR(TIMER0_COMPA_vect)
-{
-  //preload counter value to trip every 3ms with prescaler - see datasheet
-  OCR0A += 192;
-  if(integrating) {
-    calculate_angle(); 
-  }
-}
-
-//interrupt service routine for Timer2
-ISR(TIMER2_OVF_vect)
-{
-  timer2_overflows++;
-  //since max timer length is 16ms, we count how many times the timer has overflowed (15) before we toggle the state of the LED.
-  //gives us a near perfect 2Hz flash rate.
-  if(timer2_overflows >= blue_led_timeouts)
-  {
-    //getSpeed() is a custom method implemented in the Adafruit Motor Shield library that keeps track of the *commanded* motor speed in a private attribute.
-    if(leftWheel->getSpeed() + rightWheel->getSpeed() == 0)
-    {
-      //satisfies requirement to only have LED flashing during motion.
-      digitalWrite(blueLedPin, LOW);
-    }
-    else
-    {
-      digitalWrite(blueLedPin, !digitalRead(blueLedPin));
-    }
-    timer2_overflows = 0;
-  }
-  
-}
-#endif
-
-#ifdef ARDUINO_WIFI
-
-//ATMega4809 has 16-bit timers that can specify a significantly higher timeout.
-
-//We hijack TCB0 and TCB1 as they are unused in the Arduino framework. We can't set a period but we can set a compare value and the slowest prescaler (64x off TCA) to give up to 100ms tick rate.
-ISR(TCB0_INT_vect) 
-{
-  if(integrating) {
-      calculate_angle();
-  }
-  //tell TCB0 to interrupt again once the compare value is reached. No need to increment counter like on 328p as we can set an upper bound for interrupting.
-  TCB0.INTFLAGS = TCB_CAPT_bm;
-}
-
-ISR(TCB1_INT_vect)
-{
-  //16-bit timer allows us to interrupt less frequently and maintain 2hz flash rate. We opt for a 50ms tick, so every 5 = 250ms between each state change of LED.
-  timer2_overflows++;
-  if(timer2_overflows >= 5)
-  {
-    if(leftWheel->getSpeed() + rightWheel->getSpeed() == 0)
-    {
-      digitalWrite(blueLedPin, LOW);
-    }
-    else
-    {
-      digitalWrite(blueLedPin, !digitalRead(blueLedPin));
-    }
-    timer2_overflows = 0;
-  }
-  TCB1.INTFLAGS = TCB_CAPT_bm;
-}
-
-
-#endif
-
-
 
 void setup() {
-
+  #if DEBUG
   Serial.begin(9600);
-
+  #endif
   if (!AFMS.begin()) {         // create with the default frequency 1.6KHz
-    Serial.println(F("Could not find Motor Shield. Check wiring."));
+    LOG_NEWLINE(F("Could not find Motor Shield. Check wiring."));
     while (1);
   }
 
   //Binned IMU because Uno Rev2 WiFi i2C implementation is defective.
   /*
   if (!IMU.begin()) {
-      Serial.println(F("Failed to initialize IMU!"));
+      LOG_NEWLINE(F("Failed to initialize IMU!"));
 
       while (1);
   }
   */
-  Serial.println("Hello!");
+  LOG_NEWLINE(F("Hello! I am IDP L208!"));
   
 
   //Initialise ToF sensor (VL53L0X) in continuous, high accuracy mode. 
@@ -131,7 +67,7 @@ void setup() {
   delay(100);
 
   if(!TCS.begin()) {
-    Serial.println(F("Could not find colour sensor. Check wiring."));
+    LOG_NEWLINE(F("Could not find colour sensor. Check wiring."));
     while (1);
   }
 
@@ -204,16 +140,6 @@ void setup() {
 
 
   interrupts();
-  /*
-  if(!URM09.begin()) {
-    Serial.println(F("Could not find ranging sensor. Check wiring."));
-    while (1);
-  }
-  */
-  //Small distances, initialise with MEASURE_RANG_150
-  //URM09.setModeRange(MEASURE_MODE_AUTOMATIC, MEASURE_RANG_150);
-
-
 
   digitalWrite(redLedPin, HIGH);
   digitalWrite(greenLedPin, HIGH); //indicate that robot is ready to operate, put in position and press button to begin. 
@@ -325,13 +251,8 @@ void loop(void) {
     delay(400); // wait for servo to move. */
 
     //reverse out
-    leftWheel->run(BACKWARD);
-    rightWheel->run(BACKWARD);
+    delay_under_manual(station_reverse_timeout_ms, true);
 
-    leftWheel->setSpeed(avgMotorSpeed);
-    rightWheel->setSpeed(avgMotorSpeed);
-
-    delay(station_reverse_timeout_ms);
     
     //close_door();
     /* doorServo.write(servoCloseAngle);
@@ -448,21 +369,21 @@ void get_next_turn(uint8_t* newDirection)
     if (destinationNode == RED_STATION || destinationNode == GREEN_STATION)
     {
       nearStation = true;
-      Serial.println("Near station!!");
+      LOG_NEWLINE("Near station!!");
     }
     else if (destinationNode == BASE_STATION) 
     {
-      Serial.println("Near base station!");
+      LOG_NEWLINE("Near base station!");
       //no nearBlock
     }
     else
     {
       nearBlock = true;
-      Serial.println("Near block!!");
+      LOG_NEWLINE("Near block!!");
     }
   }
-  Serial.print("New node: ");
-  Serial.println(bestPath[currNode]);
+  LOG_INLINE("New node: ");
+  LOG_NEWLINE(bestPath[currNode]);
   *newDirection = bestPathDirections[currNode];
 }
 
@@ -517,15 +438,20 @@ void delay_under_pid(uint16_t timeout)
     }
 }
 
-void delay_under_manual(uint16_t timeout)
+void delay_under_manual(uint16_t timeout, bool reverse = false)
 {
   leftWheel->setSpeed(180);
   rightWheel->setSpeed(190);
 
   //hardcode distance to the pivot point of the robot
-
-  leftWheel->run(FORWARD);
-  rightWheel->run(FORWARD);
+  if(!reverse)
+  {
+    leftWheel->run(FORWARD);
+    rightWheel->run(FORWARD);
+  }
+  
+  leftWheel->run(BACKWARD);
+  rightWheel->run(BACKWARD);
 
   delay(timeout); //hardcode time
 
@@ -557,8 +483,8 @@ void calculate_angle_to_rotate(uint8_t* currDirect, uint8_t* newDirect, int* des
     {
       *desiredAngle *= -1; 
     }
-    Serial.print("Angle to rotate: ");
-    Serial.println(*desiredAngle);
+    LOG_INLINE("Angle to rotate: ");
+    LOG_NEWLINE(*desiredAngle);
 }
 
 
@@ -568,13 +494,13 @@ void set_motor_directions(int* desAng)
   //considered refactoring but this is a lot more readable.
   if(desiredAngle > 0)
   {
-    Serial.println("Rotating right");
+    LOG_NEWLINE("Rotating right");
     leftWheel->run(BACKWARD); //motors are connected backwards so this makes no sense just roll with it
     rightWheel->run(FORWARD);
   }
   else if (desiredAngle < 0)
   {
-    Serial.println("Rotating left");
+    LOG_NEWLINE("Rotating left");
     leftWheel->run(FORWARD);
     rightWheel->run(BACKWARD);
   }
@@ -592,11 +518,11 @@ void set_motor_directions(int* desAng)
 
 void make_turn(uint8_t* newDirect)
 {
-  Serial.print("Turning, ");
-  Serial.print("current direction: ");
-  Serial.print(currDirect);
-  Serial.print(" new direction: ");
-  Serial.println(*newDirect);
+  LOG_INLINE("Turning, ");
+  LOG_INLINE("current direction: ");
+  LOG_INLINE(currDirect);
+  LOG_INLINE(" new direction: ");
+  LOG_NEWLINE(*newDirect);
   if(*newDirect == REVERSE)
   {
     //digitalWrite(redLedPin, HIGH);
@@ -628,7 +554,7 @@ void make_turn(uint8_t* newDirect)
 
     if(desiredAngle == 0)
     {
-      Serial.println("Going straight!");
+      LOG_NEWLINE("Going straight!");
       leftWheel->run(FORWARD);
       rightWheel->run(FORWARD);
       //currDirect = *newDirect; direction remains same
@@ -648,7 +574,7 @@ void make_turn(uint8_t* newDirect)
       while(valAvg < rotColLineThreshold)
       {
         valAvg = get_colour_data();
-        //Serial.println(valAvg);
+        //LOG_NEWLINE(valAvg);
       } //wait until line detected again
     }
 
@@ -684,3 +610,73 @@ void celebrate_and_finish() {
       //IF WE HAVE TIME - ADD A LITTLE LIGHT SHOW??
 }
 
+#ifdef ARDUINO_UNO
+//interrupt service routine for COMPA ATMega328p interrupt on Timer0. Used for numerically integrating gyroscope data at 333Hz
+ISR(TIMER0_COMPA_vect)
+{
+  //preload counter value to trip every 3ms with prescaler - see datasheet
+  OCR0A += 192;
+  if(integrating) {
+    calculate_angle(); 
+  }
+}
+
+//interrupt service routine for Timer2
+ISR(TIMER2_OVF_vect)
+{
+  timer2_overflows++;
+  //since max timer length is 16ms, we count how many times the timer has overflowed (15) before we toggle the state of the LED.
+  //gives us a near perfect 2Hz flash rate.
+  if(timer2_overflows >= blue_led_timeouts)
+  {
+    //getSpeed() is a custom method implemented in the Adafruit Motor Shield library that keeps track of the *commanded* motor speed in a private attribute.
+    if(leftWheel->getSpeed() + rightWheel->getSpeed() == 0)
+    {
+      //satisfies requirement to only have LED flashing during motion.
+      digitalWrite(blueLedPin, LOW);
+    }
+    else
+    {
+      digitalWrite(blueLedPin, !digitalRead(blueLedPin));
+    }
+    timer2_overflows = 0;
+  }
+  
+}
+#endif
+
+#ifdef ARDUINO_WIFI
+
+//ATMega4809 has 16-bit timers that can specify a significantly higher timeout.
+
+//We hijack TCB0 and TCB1 as they are unused in the Arduino framework. We can't set a period but we can set a compare value and the slowest prescaler (64x off TCA) to give up to 100ms tick rate.
+ISR(TCB0_INT_vect) 
+{
+  if(integrating) {
+      calculate_angle();
+  }
+  //tell TCB0 to interrupt again once the compare value is reached. No need to increment counter like on 328p as we can set an upper bound for interrupting.
+  TCB0.INTFLAGS = TCB_CAPT_bm;
+}
+
+ISR(TCB1_INT_vect)
+{
+  //16-bit timer allows us to interrupt less frequently and maintain 2hz flash rate. We opt for a 50ms tick, so every 5 = 250ms between each state change of LED.
+  timer2_overflows++;
+  if(timer2_overflows >= 5)
+  {
+    if(leftWheel->getSpeed() + rightWheel->getSpeed() == 0)
+    {
+      digitalWrite(blueLedPin, LOW);
+    }
+    else
+    {
+      digitalWrite(blueLedPin, !digitalRead(blueLedPin));
+    }
+    timer2_overflows = 0;
+  }
+  TCB1.INTFLAGS = TCB_CAPT_bm;
+}
+
+
+#endif
