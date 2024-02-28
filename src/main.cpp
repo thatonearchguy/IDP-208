@@ -484,6 +484,7 @@ void make_turn(uint8_t* newDirect)
   Serial.println(*newDirect);
   if(*newDirect == REVERSE)
   {
+    digitalWrite(redLedPin, HIGH);
     leftWheel->run(BACKWARD);
     rightWheel->run(BACKWARD);
     //do not update currDirect to allow next turn to happen correctly.
@@ -669,8 +670,8 @@ void loop(void) {
     dijkstra(graph, destinationNode, stationNode, bestPath, bestPathDirections, distance);
     returnDirection(graph, bestPath, bestPathDirections);
     destinationNode = stationNode;
-    get_next_turn(&newDirect);
-    
+    currNode = 0;
+    newDirect = bestPathDirections[currNode];
     //delay(6000); //wait for 5+ seconds as required by task specification
 
     make_turn(&newDirect); //this should hopefully always be a reverse when going from the block - which will be done under PID.  
@@ -723,10 +724,11 @@ void loop(void) {
 
     dijkstra(graph, destinationNode, blockNode, bestPath, bestPathDirections, distance);
     returnDirection(graph, bestPath, bestPathDirections);
+    currNode = 0;
     destinationNode = blockNode;
     digitalWrite(redLedPin, LOW); //don't care about the colour, just write both GPIOs to low.
     digitalWrite(greenLedPin, LOW);
-    get_next_turn(&newDirect);
+    newDirect = bestPathDirections[currNode];
     make_turn(&newDirect); // this should hopefully be a reverse, and after calibration manual reverse should go far back enough to allow rest to be done under PID.
     nearStation = false;
   }
