@@ -9,21 +9,10 @@
 #include <DFRobot_VL53L0X.h>
 #include <DFRobot_URM09.h>
 #include "pathFinder.h"
+#include "calib.h" //calibration constants
+#include "dec.h" //global variables & function prototypes
 
-#define ABS_FORWARD 1
-#define ABS_BACKWARD 3
-#define ABS_LEFT 2
-#define ABS_RIGHT 0
-#define REVERSE 4
-#define FINISH 5
-#define INVALID 6
 
-#define RED_STATION 5
-#define GREEN_STATION 6
-#define BASE_STATION 0
-
-#define RED 1
-#define BLACK 0
 //------------------------Declare / Initialise components---------------------------
 // motor
 Adafruit_MotorShield AFMS = Adafruit_MotorShield();
@@ -38,107 +27,7 @@ DFRobot_VL53L0X VL53;
 
 Servo doorServo; // servo motor for box collection mechanism
 
-// Digital Pin definitions
-// line sensors
-const uint8_t colDetectPin = 1; // line sensor for box colour detection
-const uint8_t leftJctPin = 2; // left line sensor
-const uint8_t rightJctPin = 3; // left line sensor
-// led 
-const uint8_t redLedPin = 4; 
-const uint8_t greenLedPin = 5;
-const uint8_t blueLedPin = 6;
-
-const uint8_t buttonPin = 7; // start program button
-const uint8_t servoPin = 9; // servo motor for box collection mechanism
-
-// colour sensor is i2C connected
-// IMU is i2C connected
-// motor shield is i2C connected
-// distance sensor is i2C connected
-
-// Calibration Values
-// for angle calculation from gyroscope (not used)
-unsigned long lastMillis;
-const uint8_t timer0_of_ms = 3; 
-// for flasjing blue LED during movement of robot
-uint8_t timer2_overflows = 0; // initialising timer for flashing loop
-const uint8_t blueLedUpdRate = 4; // flashing rate Hz
-const uint8_t timer2_of_ms = 16; // ISR (looping) period set manually
-const uint8_t blue_led_timeouts = uint8_t((1000) / (blueLedUpdRate * timer2_of_ms)); // determines when led flashes
-
-//Colour sensor
-int idealLightValue = 350; // threshold value for white
-uint8_t numAvgSamples = 2; // take average of numAvgSamples light sensor reading
-
-//Ranging Sensor
-uint8_t block_threshold_mm = 90; //adjust for chassis geometry
-uint8_t block_interior_threshold_mm = 20;
-uint8_t wall_threshold_mm = 80; //adjust for station geometry
-
-uint16_t station_reverse_timeout_ms = 800;
-uint16_t station_approach_timeout_ms = 4000;
-
-//Servo
-const uint8_t servoOpenAngle = 60;
-const uint8_t servoCloseAngle = 130;
-
-//PID
-uint8_t avgMotorSpeed = 225; 
-const uint16_t rotDelayTime = 155;
-const uint16_t rotColLineThreshold = 190;
-const uint16_t forwardDelayTime = 350;
-float Kp = 0.2;
-float Ki = 0;
-float Kd = 0;
-const int max_integ_val = 300;
-const int min_integ_val = -300;
-
-float prop;
-float integ;
-float deriv;
-int lastError;
-int correction;
-
-bool insideEdge; //used to tell PID which edge to follow (inside or outside)
-bool finishedRun = false;
-
-//Junction detection
-bool leftJctDetect = false;
-bool rightJctDetect = false;
-bool tJctDetect = false;
-
-//Pathfinding
 uint8_t currDirect = ABS_FORWARD; //default is forwards
-uint8_t currNode = 0;
-node graph[numVert][numVert];
-int bestPath[numVert];
-direction bestPathDirections[numVert];
-int distance[numVert];
-bool nearBlock = false;
-bool nearStation = false;
-uint8_t destinationNode;
-
-uint8_t blockIndices[] = {7, 12, 14, 17};
-uint8_t blocksCollected = 0;
-
-//IMU
-float yawAngle = 0;
-float yawData;
-bool turnReady = false;
-uint8_t newDirect = 1;
-bool integrating = false;
-
-//------------------------Declare helper functions---------------------------
-bool verify_turn();
-void jct_int_handler();
-void make_turn(uint8_t* new_direc);
-void get_next_turn_dummy_anticlockwise(uint8_t* newDirection);
-void get_next_turn_dummy_clockwise(uint8_t* newDirection);
-void calculate_pid(int valAvg, int *correct);
-void calculate_angle();
-float get_rotation_data();
-void button_int_handler();
-
 
 #ifdef ARDUINO_UNO
 //interrupt service routine for COMPA ATMega328p interrupt on Timer0. Used for numerically integrating gyroscope data at 333Hz
@@ -331,10 +220,145 @@ void setup() {
   //delay(1000);
   while (!digitalRead(buttonPin));
   delay(200); //debounce
-  attachInterrupt(digitalPinToInterrupt(buttonPin), button_int_handler, RISING);
   digitalWrite(redLedPin, LOW);
   digitalWrite(greenLedPin, LOW);
 }
+
+void loop(void) {
+  
+  uint16_t valAvg = get_colour_data();
+  calculate_pid(valAvg, &correction);
+  pid_motor_regulate(correction);
+
+  //In the main loop we poll turnReady, nearBlock, and nearStation flags which are set by interrupts and interrupt handlers to clean up the flow of the code and make it more performant.
+
+  if(turnReady) //if a junction was detected
+  {
+    leftWheel->setSpeed(0);
+    rightWheel->setSpeed(0);
+    if(!finishedRun) //if we haven't picked up all the blocks
+    {
+      get_next_turn(&newDirect); //get the next turn from the navigation
+      make_turn(&newDirect); //make the robot turn to this new direction
+      turnReady = !turnReady; //reset flag
+    }
+    else //if we're finished we've reached the starting box
+    {
+      celebrate_and_finish();
+    }
+  }
+  
+  if(nearBlock)
+  {
+    //could probably refactor but cba - it's more readable this way too
+
+    avgMotorSpeed = 140; //slow down robot
+    //move forward under PID until distance sensor trips
+    delay_under_pid(1500);
+     //give time for robot to straighten out before we start looking at distance to avoid tripping on surroundings.
+    distance_under_pid(block_threshold_mm);
+
+    leftWheel->setSpeed(0);
+    rightWheel->setSpeed(0);
+
+    //open_door();
+    //doorServo.write(servoOpenAngle); //extra tolerance
+    //delay(400);
+    /*
+    //in case line ends early, we use manual operation to drive as close as possible to the block. 
+    while (int(VL53.getDistance()) > block_interior_threshold_mm)
+    {
+      leftWheel->setSpeed(130);
+      rightWheel->setSpeed(140);
+    }
+    
+    
+    leftWheel->setSpeed(0);
+    rightWheel->setSpeed(0);
+    */
+    //close door
+    //close_door();
+    
+    /*doorServo.write(servoCloseAngle);
+    delay(400); //wait for servo to move. */
+    //scan block colour (sensor can be placed next to the castor)
+    bool red = digitalRead(colDetectPin);
+
+    uint8_t stationNode;
+    if(red)
+    {
+      stationNode = RED_STATION;
+      digitalWrite(redLedPin, HIGH);
+    }
+    else
+    {
+      stationNode = GREEN_STATION;
+      digitalWrite(greenLedPin, HIGH);
+    }
+    //block is now captured, load route for appropriate destination.
+    
+    start_new_journey(&destinationNode, &stationNode, &newDirect);
+
+    destinationNode = stationNode;
+    //delay(6000); //wait for 5+ seconds as required by task specification
+
+    make_turn(&newDirect); //this should hopefully always be a reverse when going from the block - which will be done under PID.  
+    blocksCollected++; 
+    nearBlock = false;
+    
+  }
+  
+  
+  if(nearStation)
+  {
+    // could probably refactor but cba - it's more readable this way too
+
+    avgMotorSpeed = 140; // slow down robot
+
+    delay_under_pid(station_approach_timeout_ms);
+
+    leftWheel->setSpeed(0);
+    rightWheel->setSpeed(0);
+    // open door
+    //open_door();
+    /* doorServo.write(servoOpenAngle);
+    delay(400); // wait for servo to move. */
+
+    //reverse out
+    leftWheel->run(BACKWARD);
+    rightWheel->run(BACKWARD);
+
+    leftWheel->setSpeed(avgMotorSpeed);
+    rightWheel->setSpeed(avgMotorSpeed);
+
+    delay(station_reverse_timeout_ms);
+    
+    //close_door();
+    /* doorServo.write(servoCloseAngle);
+    delay(50); */
+
+    uint8_t blockNode = 0; //YIPEEE RETURN TO BASE (will be overriden by the actual block index if not all of them have been picked up)
+    //this also has the advantage of very easily being able to add the extension task of just taking blocks from 0 to the stations.
+    // block is now delivered after , load route for appropriate destination.
+    if(!(blocksCollected >= sizeof(blockIndices)/sizeof(blockIndices[0])))
+    {
+      blockNode = blockIndices[blocksCollected];
+    }
+
+    start_new_journey(&destinationNode, &blockNode, &newDirect);
+  
+    destinationNode = blockNode;
+    digitalWrite(redLedPin, LOW); //don't care about the colour, just write both GPIOs to low.
+    digitalWrite(greenLedPin, LOW);
+    make_turn(&newDirect); // this should hopefully be a reverse, and after calibration manual reverse should go far back enough to allow rest to be done under PID.
+    nearStation = false;
+    avgMotorSpeed = 225;
+  }
+  
+}
+
+
+
 //------------------------Define helper functions---------------------------
 // Function to change the position of the servo motor to open door
 // Parameters: void
@@ -342,7 +366,7 @@ void setup() {
 void open_door() {
   for (int pos = servoCloseAngle; pos>= servoOpenAngle; pos--){
     doorServo.write(pos);
-    delay(15);
+    delay(3);
   }
 }
 // Function to change the position of the servo motor to close door 
@@ -351,7 +375,7 @@ void open_door() {
 void close_door() {
   for (int pos = servoOpenAngle; pos<= servoCloseAngle; pos++){
     doorServo.write(pos);
-    delay(25);
+    delay(5);
   }
 }
 
@@ -374,11 +398,6 @@ void jct_int_handler()
   
   turnReady = true;
 
-}
-
-void button_int_handler()
-{
-  currNode -= 1;
 }
 
 // PID calculator for line following
@@ -487,11 +506,90 @@ void pid_motor_regulate(int correction)
 }
 
 
+void delay_under_pid(uint16_t timeout)
+{
+  unsigned long time1 = millis();
+  while(millis() - time1 < timeout) {
+      uint16_t valAvg = get_colour_data();
+      calculate_pid(valAvg, &correction);
+      pid_motor_regulate(correction);
+
+    }
+}
+
+void delay_under_manual(uint16_t timeout)
+{
+  leftWheel->setSpeed(180);
+  rightWheel->setSpeed(190);
+
+  //hardcode distance to the pivot point of the robot
+
+  leftWheel->run(FORWARD);
+  rightWheel->run(FORWARD);
+
+  delay(timeout); //hardcode time
+
+  leftWheel->setSpeed(0);
+  leftWheel->setSpeed(0);
+}
+
+void distance_under_pid(uint8_t threshold)
+{
+  while(int(VL53.getDistance()) > threshold)
+  {
+    uint16_t valAvg = get_colour_data();
+    calculate_pid(valAvg, &correction);
+    pid_motor_regulate(correction);
+   }
+}
+
+
+void calculate_angle_to_rotate(uint8_t* currDirect, uint8_t* newDirect, int* desiredAngle) {
+    *desiredAngle = (*currDirect - *newDirect);
+    if(abs(*desiredAngle) == 3)
+    {
+        *desiredAngle = (*desiredAngle % 2) * -1;
+        //gyro is in radians. one edge case - modulus any change above 180 degrees to save time
+    }
+    *desiredAngle *= 90;
+    //WORKAROUND - avoid hitting wall on rotation.
+    if(abs(*desiredAngle) == 180 && bestPath[currNode] == 1)
+    {
+      *desiredAngle *= -1; 
+    }
+    Serial.print("Angle to rotate: ");
+    Serial.println(*desiredAngle);
+}
+
+
+void set_motor_directions(int* desAng)
+{
+  int desiredAngle = *desAng;
+  //considered refactoring but this is a lot more readable.
+  if(desiredAngle > 0)
+  {
+    Serial.println("Rotating right");
+    leftWheel->run(BACKWARD); //motors are connected backwards so this makes no sense just roll with it
+    rightWheel->run(FORWARD);
+  }
+  else if (desiredAngle < 0)
+  {
+    Serial.println("Rotating left");
+    leftWheel->run(FORWARD);
+    rightWheel->run(BACKWARD);
+  }
+
+}
+
+
 //god i hate this function if only we had the imu :((((
 
 // Changes the direction of the robot to the specified new direction. Makes initial rotation manually before scanning for new line with the colour sensor
 // Parameters: uint8_t* newDirect - pointer to new direction variable
 // Returns: void
+
+
+
 void make_turn(uint8_t* newDirect)
 {
   Serial.print("Turning, ");
@@ -502,14 +600,14 @@ void make_turn(uint8_t* newDirect)
   if(*newDirect == REVERSE)
   {
     //digitalWrite(redLedPin, HIGH);
-    Kp = 0.00;
+    Kp = 0.00; //WORKAROUND - robot control parameters differ massively when in reverse due to flipped geometry. Kp -> 0 effectively disables PID while utilising existing loop.
     leftWheel->run(BACKWARD);
     rightWheel->run(BACKWARD);
     //do not update currDirect to allow next turn to happen correctly.
   } 
   else
   {
-    Kp = 0.15;
+    Kp = 0.2; //when not reversing, ensure Kp is always set to the appropriate value.
     if (*newDirect == FINISH)
     {
       finishedRun = true;
@@ -522,71 +620,30 @@ void make_turn(uint8_t* newDirect)
       while(1);
     }
     yawAngle = 0;
-    //this will make 180 degree rotations always go anticlockwise, but should be fine - only happens at the stations.
-    int desiredAngle = (currDirect - *newDirect);
-    if(abs(desiredAngle) == 3)
-    {
-        desiredAngle = (desiredAngle % 2) * -1;
-    }
-    desiredAngle *= 90;
+    int desiredAngle;
     
-    if(abs(desiredAngle) == 180 && bestPath[currNode] == 1)
-    {
-      desiredAngle *= -1; //avoid hitting wall on rotation.
-    }
-    //gyro is in radians. one edge case - modulus any change above 180 degrees to save time
-    Serial.print("Angle to rotate: ");
-    Serial.println(desiredAngle);
-    leftWheel->setSpeed(180);
-    rightWheel->setSpeed(190);
+    calculate_angle_to_rotate(&currDirect, newDirect, &desiredAngle);
+    
+    delay_under_manual(forwardDelayTime); //move forward until pivot hit
 
-    //hardcode distance to the pivot point of the robot
-
-    leftWheel->run(FORWARD);
-    rightWheel->run(FORWARD);
-
-    delay(forwardDelayTime); //hardcode time
-
-    leftWheel->setSpeed(0);
-    leftWheel->setSpeed(0);
-
-    if(desiredAngle > 0)
-    {
-      Serial.println("Rotating right");
-      leftWheel->run(BACKWARD); //motors are connected backwards so this makes no sense just roll with it
-      rightWheel->run(FORWARD);
-    }
-    else if (desiredAngle < 0)
-    {
-      Serial.println("Rotating left");
-      leftWheel->run(FORWARD);
-      rightWheel->run(BACKWARD);
-    }
-    else
+    if(desiredAngle == 0)
     {
       Serial.println("Going straight!");
       leftWheel->run(FORWARD);
       rightWheel->run(FORWARD);
       //currDirect = *newDirect; direction remains same
-      return; //skip rotation part
+      return; //skip rotation if going straight
     }
 
-
+    set_motor_directions(&desiredAngle);
 
     leftWheel->setSpeed(155);
     rightWheel->setSpeed(155);
-    
-    //integrating = true;
-    //account for negative (counterclockwise) case
-    //while(abs(yawAngle) < abs(desiredAngle)) //wait
 
-    //integrating = false;
-
-    //allow for 180 degree turns
-    
-    for(int i = 0; i < abs(desiredAngle); i+=90)
+    //WORKAROUND - IMU unavailable so we use the colour sensor to detect when we've reached the line again. 
+    for(int i = 0; i < abs(desiredAngle); i+=90) //for loop will run this a second time to complete 180 degree turns correctly.
     {
-      delay(rotDelayTime); //allow robot to move away from original line 
+      delay(rotDelayTime); //allow robot to move away from original line before we start scanning with the colour sensor. 
       uint16_t valAvg = get_colour_data();
       while(valAvg < rotColLineThreshold)
       {
@@ -607,175 +664,23 @@ void make_turn(uint8_t* newDirect)
 
 }
 
+void start_new_journey(uint8_t* sourceNode, uint8_t* destinationNode, uint8_t* newDirect)
+{
+  dijkstra(graph, *sourceNode, *destinationNode, bestPath, bestPathDirections, distance);
+  returnDirection(graph, bestPath, bestPathDirections);
+  currNode = 0;
+  *newDirect = bestPathDirections[currNode];
+}
 
-void loop(void) {
-  
-  uint16_t valAvg = get_colour_data();
-  calculate_pid(valAvg, &correction);
-  pid_motor_regulate(correction);
-
-  //Serial.print(F("Current angle: "));
-  //Serial.println(yawAngle);
-
-  if(turnReady) //if a junction was detected
-  {
-    /*
-
-    OPTIMISATION/FAILSAFE
-    check numerical integration of accelerometer x/y and ensure
-    total travelled distance is within expected value (compare against weight)
-
-    */
-    leftWheel->setSpeed(0);
-    rightWheel->setSpeed(0);
-    if(!finishedRun) //if we haven't picked up all the blocks
-    {
-      //Serial.println("Turning!");
-      //make_turn(1);
-      get_next_turn(&newDirect); //get the next turn from the navigation
-      make_turn(&newDirect); //make the robot turn to this new direction
-      turnReady = !turnReady; //reset flag
-    }
-    else //if we're finished we've reached the starting box
-    {
-      //PID impossible due to geometry of starting region, so we manually drive until we cross the threshold.
+void celebrate_and_finish() {
+//PID impossible due to geometry of starting region, so we manually drive until we cross the threshold.
       leftWheel->setSpeed(140);
       rightWheel->setSpeed(140);
       delay(800); //calibrate for however long it takes to cross the threshold.
       leftWheel->setSpeed(0);
       rightWheel->setSpeed(0);
       while(1); //We're now finished, infinite loop until power turned off.
-    }
-  }
-  
-  if(nearBlock)
-  {
-    //could probably refactor but cba - it's more readable this way too
 
-    avgMotorSpeed = 140; //slow down robot
-    //move forward under PID until distance sensor trips
-
-    unsigned long time1 = millis();
-
-    while(millis() - time1 < 1500)
-    {
-      uint16_t valAvg = get_colour_data();
-      calculate_pid(valAvg, &correction);
-      pid_motor_regulate(correction);
-
-    } //give time for robot to straighten out before we start looking at distance to avoid tripping on surroundings.
-
-    while(int(VL53.getDistance()) > block_threshold_mm)
-    {
-      uint16_t valAvg = get_colour_data();
-      calculate_pid(valAvg, &correction);
-      pid_motor_regulate(correction);
-
-    }
-    leftWheel->setSpeed(0);
-    rightWheel->setSpeed(0);
-
-    //open_door();
-    //doorServo.write(servoOpenAngle); //extra tolerance
-    //delay(400);
-    /*
-    //in case line ends early, we use manual operation to drive as close as possible to the block. 
-    while (int(VL53.getDistance()) > block_interior_threshold_mm)
-    {
-      leftWheel->setSpeed(130);
-      rightWheel->setSpeed(140);
-    }
-    
-    
-    leftWheel->setSpeed(0);
-    rightWheel->setSpeed(0);
-    */
-    //close door
-    //close_door();
-    
-    /*doorServo.write(servoCloseAngle);
-    delay(400); //wait for servo to move. */
-    //scan block colour (sensor can be placed next to the castor)
-    bool red = digitalRead(colDetectPin);
-
-    int stationNode;
-    if(red)
-    {
-      stationNode = 6;
-      digitalWrite(redLedPin, HIGH);
-    }
-    else
-    {
-      stationNode = 5;
-      digitalWrite(greenLedPin, HIGH);
-    }
-    //block is now captured, load route for appropriate destination.
-    dijkstra(graph, destinationNode, stationNode, bestPath, bestPathDirections, distance);
-    returnDirection(graph, bestPath, bestPathDirections);
-    destinationNode = stationNode;
-    currNode = 0;
-    newDirect = bestPathDirections[currNode];
-    //delay(6000); //wait for 5+ seconds as required by task specification
-
-    make_turn(&newDirect); //this should hopefully always be a reverse when going from the block - which will be done under PID.  
-    blocksCollected++; 
-    nearBlock = false;
-    
-  }
-  
-  
-  if(nearStation)
-  {
-    // could probably refactor but cba - it's more readable this way too
-
-    avgMotorSpeed = 140; // slow down robot
-
-    unsigned long time1 = millis();
-    while(millis() - time1 < station_approach_timeout_ms) {
-      uint16_t valAvg = get_colour_data();
-      calculate_pid(valAvg, &correction);
-      pid_motor_regulate(correction);
-
-    }
-
-    leftWheel->setSpeed(0);
-    rightWheel->setSpeed(0);
-    // open door
-    //open_door();
-    /* doorServo.write(servoOpenAngle);
-    delay(400); // wait for servo to move. */
-
-    //reverse out
-    leftWheel->run(BACKWARD);
-    rightWheel->run(BACKWARD);
-
-    leftWheel->setSpeed(avgMotorSpeed);
-    rightWheel->setSpeed(avgMotorSpeed);
-
-    delay(station_reverse_timeout_ms);
-    
-    //close_door();
-    /* doorServo.write(servoCloseAngle);
-    delay(50); */
-
-    int blockNode = 0; //YIPEEE RETURN TO BASE (will be overriden by the actual block index if not all of them have been picked up)
-    //this also has the advantage of very easily being able to add the extension task of just taking blocks from 0 to the stations.
-    // block is now delivered after , load route for appropriate destination.
-    if(!(blocksCollected >= sizeof(blockIndices)/sizeof(blockIndices[0])))
-    {
-      blockNode = blockIndices[blocksCollected];
-    }
-
-    dijkstra(graph, destinationNode, blockNode, bestPath, bestPathDirections, distance);
-    returnDirection(graph, bestPath, bestPathDirections);
-    currNode = 0;
-    destinationNode = blockNode;
-    digitalWrite(redLedPin, LOW); //don't care about the colour, just write both GPIOs to low.
-    digitalWrite(greenLedPin, LOW);
-    newDirect = bestPathDirections[currNode];
-    make_turn(&newDirect); // this should hopefully be a reverse, and after calibration manual reverse should go far back enough to allow rest to be done under PID.
-    nearStation = false;
-    avgMotorSpeed = 225;
-  }
-  
+      //IF WE HAVE TIME - ADD A LITTLE LIGHT SHOW??
 }
+
