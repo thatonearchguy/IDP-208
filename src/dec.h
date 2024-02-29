@@ -55,3 +55,5 @@ uint16_t get_colour_data();
 void pid_motor_regulate(int correction);
 void get_next_turn(uint8_t* newDirection);
 void get_nearest_block(uint8_t *sourceNode, uint8_t* blockNode);
+void open_door();
+void close_door();

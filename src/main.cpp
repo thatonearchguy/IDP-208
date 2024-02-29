@@ -118,7 +118,7 @@ void setup() {
   TIMSK2 |= B00000001; // Enable Timer Overflow Interrupt
 
   PCICR |= B00000100; // Enables Ports D Pin Change Interrupts
-  PCMSK2 |= ((1 << crashSensorPin) || (1 << leftJctPin) || (1 << rightJctPin)); //ASSUMES WE ARE CONNECTED ON D BANK!!
+  PCMSK2 |= ((1 << crashSensorPin) | (1 << leftJctPin) | (1 << rightJctPin)); //ASSUMES WE ARE CONNECTED ON D BANK!!
   //PCMSK2 |= B00001101; // PCINT16 (pin 0), PCINT18 (pin 2), PCINT1NT19 (pin 3)
 
   #endif
@@ -277,7 +277,7 @@ void loop(void) {
 
 void get_nearest_block(uint8_t *sourceNode, uint8_t* blockNode) {
 
-  if(!(blocksCollected >= 2^((sizeof(blockIndices)/sizeof(blockIndices[0])))-1))
+  if(!(blocksCollected >= 2^(((sizeof(blockIndices)/sizeof(blockIndices[0])))-1)))
       {
         int mindistance = MAX_DIST;
         for(uint8_t i = 0; i < (sizeof(blockIndices)/sizeof(blockIndices[0])); i ++)
