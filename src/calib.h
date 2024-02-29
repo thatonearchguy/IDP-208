@@ -51,7 +51,7 @@ uint8_t numAvgSamples = 2; // take average of numAvgSamples light sensor reading
 
 //Ranging Sensor
 uint8_t block_threshold_mm = 90; //adjust for chassis geometry
-uint8_t block_interior_threshold_mm = 20;
+uint8_t block_interior_threshold_mm = 85;
 uint8_t wall_threshold_mm = 80; //adjust for station geometry
 
 uint16_t station_reverse_timeout_ms = 800;

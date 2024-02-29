@@ -117,9 +117,9 @@ void setup() {
   TCCR2B |= B00000111; // Prescaler = 1024
   TIMSK2 |= B00000001; // Enable Timer Overflow Interrupt
 
-  PCICR |= 0b00000100; // Enables Ports D Pin Change Interrupts
+  PCICR |= B00000100; // Enables Ports D Pin Change Interrupts
   PCMSK2 |= ((1 << crashSensorPin) || (1 << leftJctPin) || (1 << rightJctPin)); //ASSUMES WE ARE CONNECTED ON D BANK!!
-  //PCMSK2 |= 0b00001101; // PCINT16 (pin 0), PCINT18 (pin 2), PCINT1NT19 (pin 3)
+  //PCMSK2 |= B00001101; // PCINT16 (pin 0), PCINT18 (pin 2), PCINT1NT19 (pin 3)
 
   #endif
 
@@ -188,35 +188,22 @@ void loop(void) {
 
     avgMotorSpeed = 140; //slow down robot
     //move forward under PID until distance sensor trips
-    delay_under_pid(1500);
+    delay_under_pid(2500);
      //give time for robot to straighten out before we start looking at distance to avoid tripping on surroundings.
-    distance_under_pid(block_threshold_mm);
 
     leftWheel->setSpeed(0);
     rightWheel->setSpeed(0);
 
-    //open_door();
-    //doorServo.write(servoOpenAngle); //extra tolerance
-    //delay(400);
-    /*
-    //in case line ends early, we use manual operation to drive as close as possible to the block. 
-    while (int(VL53.getDistance()) > block_interior_threshold_mm)
-    {
-      leftWheel->setSpeed(130);
-      rightWheel->setSpeed(140);
-    }
+    open_door();
     
+    distance_under_pid(block_interior_threshold_mm); //distance sensor can only see after door is opened.
     
-    leftWheel->setSpeed(0);
-    rightWheel->setSpeed(0);
-    */
-    //close door
-    //close_door();
-    
-    /*doorServo.write(servoCloseAngle);
-    delay(400); //wait for servo to move. */
     //scan block colour (sensor can be placed next to the castor)
     bool red = digitalRead(colDetectPin);
+    leftWheel->setSpeed(0);
+    rightWheel->setSpeed(0);
+    
+    close_door();
 
     uint8_t stationNode;
     if(red)
@@ -233,11 +220,18 @@ void loop(void) {
     
     start_new_journey(&destinationNode, &stationNode, &newDirect);
 
-    destinationNode = stationNode;
-    //delay(6000); //wait for 5+ seconds as required by task specification
+    for(uint8_t blockIndex = 0; blockIndex < sizeof(blockIndices)/sizeof(blockIndices[0]); blockIndex ++)
+    {
+      if(blockIndices[blockIndex] == destinationNode)
+      {
+        blocksCollected |= (1 << blockIndex);
+      }
+    }
 
-    make_turn(&newDirect); //this should hopefully always be a reverse when going from the block - which will be done under PID.  
-    blocksCollected++; 
+    destinationNode = stationNode;
+    delay(2000); //wait as required by task specification
+
+    make_turn(&newDirect); //this should hopefully always be a reverse when going from the block - which will be done under PID.   
     nearBlock = false;
     
   }
@@ -253,26 +247,17 @@ void loop(void) {
 
     leftWheel->setSpeed(0);
     rightWheel->setSpeed(0);
-    // open door
-    //open_door();
-    /* doorServo.write(servoOpenAngle);
-    delay(400); // wait for servo to move. */
 
+    open_door();
     //reverse out
     delay_under_manual(station_reverse_timeout_ms, true);
-
     
-    //close_door();
-    /* doorServo.write(servoCloseAngle);
-    delay(50); */
+    close_door();
 
     uint8_t blockNode = 0; //YIPEEE RETURN TO BASE (will be overriden by the actual block index if not all of them have been picked up)
     //this also has the advantage of very easily being able to add the extension task of just taking blocks from 0 to the stations.
     // block is now delivered after , load route for appropriate destination.
-    if(!(blocksCollected >= sizeof(blockIndices)/sizeof(blockIndices[0])))
-    {
-      blockNode = blockIndices[blocksCollected];
-    }
+    get_nearest_block(&destinationNode, &blockNode);
 
     start_new_journey(&destinationNode, &blockNode, &newDirect);
   
@@ -287,8 +272,38 @@ void loop(void) {
 }
 
 //Very arduino-esque - until this point lol, now it gets real
-
 //------------------------Define helper functions---------------------------
+
+
+void get_nearest_block(uint8_t *sourceNode, uint8_t* blockNode) {
+
+  if(!(blocksCollected >= 2^((sizeof(blockIndices)/sizeof(blockIndices[0])))-1))
+      {
+        int mindistance = MAX_DIST;
+        for(uint8_t i = 0; i < (sizeof(blockIndices)/sizeof(blockIndices[0])); i ++)
+        {
+          if(!(blocksCollected & (1 << i))) {
+            dijkstra(graph, *sourceNode, blockIndices[i], bestPath, bestPathDirections, distance);
+            int counter = 0;
+            int total_distance = 0;
+            while(distance[counter] != -1)
+            {
+              total_distance += distance[counter];
+              counter ++;
+            }
+            if(total_distance < mindistance) {
+              mindistance = total_distance;
+              *blockNode = blockIndices[i];
+            }
+          }
+        }
+        *blockNode = blockIndices[blocksCollected];
+      }  
+}
+
+
+
+
 // Function to change the position of the servo motor to open door
 // Parameters: void
 // Returns: void
@@ -594,6 +609,13 @@ void make_turn(uint8_t* newDirect)
   }
 
 }
+
+
+void get_closest_block(uint8_t* stationNode)
+{
+
+}
+
 
 void start_new_journey(uint8_t* sourceNode, uint8_t* destinationNode, uint8_t* newDirect)
 {
