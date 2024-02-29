@@ -76,14 +76,14 @@ void setup() {
   pinMode(leftJctPin, INPUT);
   pinMode(rightJctPin, INPUT);
   pinMode(buttonPin, INPUT);
+  pinMode(crashSensorPin, INPUT);
 
   //set colour led output pins
   pinMode(redLedPin, OUTPUT);
   pinMode(greenLedPin, OUTPUT);
   pinMode(blueLedPin, OUTPUT);
 
-  attachInterrupt(digitalPinToInterrupt(leftJctPin), jct_int_handler, RISING);
-  attachInterrupt(digitalPinToInterrupt(rightJctPin), jct_int_handler, RISING);
+  
 
   correction = 0;
 
@@ -117,6 +117,10 @@ void setup() {
   TCCR2B |= B00000111; // Prescaler = 1024
   TIMSK2 |= B00000001; // Enable Timer Overflow Interrupt
 
+  PCICR |= 0b00000100; // Enables Ports D Pin Change Interrupts
+  PCMSK2 |= ((1 << crashSensorPin) || (1 << leftJctPin) || (1 << rightJctPin)); //ASSUMES WE ARE CONNECTED ON D BANK!!
+  //PCMSK2 |= 0b00001101; // PCINT16 (pin 0), PCINT18 (pin 2), PCINT1NT19 (pin 3)
+
   #endif
 
   #ifdef ARDUINO_WIFI
@@ -135,6 +139,10 @@ void setup() {
   TCB1.CTRLA = TCB_CLKSEL_CLKTCA_gc | TCB_ENABLE_bm | TCB_RUNSTDBY_bm; //specify TCA 64x scaler, start TCB1 and use Run Standby mode.
 
   TCB1.INTCTRL = TCB_CAPT_bm;
+
+  attachInterrupt(digitalPinToInterrupt(leftJctPin), jct_int_handler, RISING);
+  attachInterrupt(digitalPinToInterrupt(rightJctPin), jct_int_handler, RISING);
+  attachInterrupt(digitalPinToInterrupt(crashSensorPin), jct_int_handler, FALLING);
 
   #endif
 
@@ -609,6 +617,11 @@ void celebrate_and_finish() {
 
 #ifdef ARDUINO_UNO
 //interrupt service routine for COMPA ATMega328p interrupt on Timer0. Used for numerically integrating gyroscope data at 333Hz
+ISR(PCINT2_vect)
+{
+  jct_int_handler();
+}
+
 ISR(TIMER0_COMPA_vect)
 {
   //preload counter value to trip every 3ms with prescaler - see datasheet
