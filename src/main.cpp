@@ -272,37 +272,26 @@ void loop(void) {
 }
 
 //Very arduino-esque - until this point lol, now it gets real
+
+
 //------------------------Define helper functions---------------------------
-
-
 void get_nearest_block(uint8_t *sourceNode, uint8_t* blockNode) {
-
   if(!(blocksCollected >= 2^(((sizeof(blockIndices)/sizeof(blockIndices[0])))-1)))
-      {
-        int mindistance = MAX_DIST;
-        for(uint8_t i = 0; i < (sizeof(blockIndices)/sizeof(blockIndices[0])); i ++)
-        {
-          if(!(blocksCollected & (1 << i))) {
-            dijkstra(graph, *sourceNode, blockIndices[i], bestPath, bestPathDirections, distance);
-            int counter = 0;
-            int total_distance = 0;
-            while(distance[counter] != -1)
-            {
-              total_distance += distance[counter];
-              counter ++;
-            }
-            if(total_distance < mindistance) {
-              mindistance = total_distance;
-              *blockNode = blockIndices[i];
-            }
-          }
+  {
+    int mindistance = MAX_DIST;
+    for(uint8_t i = 0; i < (sizeof(blockIndices)/sizeof(blockIndices[0])); i ++)
+    {
+      if(!(blocksCollected & (1 << i))) {
+        dijkstra(graph, *sourceNode, blockIndices[i], bestPath, bestPathDirections, distance);
+
+        if(distance[blockIndices[i]] < mindistance) {
+          mindistance = distance[blockIndices[i]];
+          *blockNode = blockIndices[i];
         }
-        *blockNode = blockIndices[blocksCollected];
-      }  
+      }
+    }
+  }  
 }
-
-
-
 
 // Function to change the position of the servo motor to open door
 // Parameters: void
@@ -607,12 +596,6 @@ void make_turn(uint8_t* newDirect)
     currDirect = *newDirect; //orientation does not change in reverse.
     avgMotorSpeed = 225;
   }
-
-}
-
-
-void get_closest_block(uint8_t* stationNode)
-{
 
 }
 
