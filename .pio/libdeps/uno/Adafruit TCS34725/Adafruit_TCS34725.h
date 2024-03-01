@@ -40,7 +40,6 @@
 #endif
 
 #include <Adafruit_I2CDevice.h>
-#include <BitBang_I2C.h>
 
 #define TCS34725_ADDRESS (0x29)     /**< I2C address **/
 #define TCS34725_COMMAND_BIT (0x80) /**< Command bit **/

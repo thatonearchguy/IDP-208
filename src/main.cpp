@@ -11,7 +11,8 @@
 #include "calib.h" //calibration constants
 #include "dec.h" //global variables & function prototypes
 
-#define DEBUG 0 //added debug switch to save some SRAM (optimise out all the serial calls)
+#define DEBUG 1 //added debug switch to save some SRAM (optimise out all the serial calls)
+#define EDGE_FLIPPING 1
 
 #if DEBUG
   #define LOG_NEWLINE(msg) Serial.println(msg)
@@ -41,6 +42,7 @@ uint8_t currDirect = ABS_FORWARD; //default is forwards
 void setup() {
   #if DEBUG
   Serial.begin(9600);
+  delay(100);
   #endif
   if (!AFMS.begin()) {         // create with the default frequency 1.6KHz
     LOG_NEWLINE(F("Could not find Motor Shield. Check wiring."));
@@ -76,14 +78,12 @@ void setup() {
   pinMode(leftJctPin, INPUT);
   pinMode(rightJctPin, INPUT);
   pinMode(buttonPin, INPUT);
+  pinMode(crashSensorPin, INPUT);
 
   //set colour led output pins
   pinMode(redLedPin, OUTPUT);
   pinMode(greenLedPin, OUTPUT);
   pinMode(blueLedPin, OUTPUT);
-
-  attachInterrupt(digitalPinToInterrupt(leftJctPin), jct_int_handler, RISING);
-  attachInterrupt(digitalPinToInterrupt(rightJctPin), jct_int_handler, RISING);
 
   correction = 0;
 
@@ -115,6 +115,9 @@ void setup() {
   TCCR2B = 0;          // Init Timer2B
   TCCR2B |= B00000111; // Prescaler = 1024
   TIMSK2 |= B00000001; // Enable Timer Overflow Interrupt
+  PCICR |= B00000100; // Enables Ports D Pin Change Interrupts
+  PCMSK2 |= ((1 << crashSensorPin) | (1 << leftJctPin) | (1 << rightJctPin)); //ASSUMES WE ARE CONNECTED ON D BANK!!
+  //PCMSK2 |= B00001101; // PCINT16 (pin 0), PCINT18 (pin 2), PCINT1NT19 (pin 3)
 
   #endif
 
@@ -134,6 +137,10 @@ void setup() {
   TCB1.CTRLA = TCB_CLKSEL_CLKTCA_gc | TCB_ENABLE_bm | TCB_RUNSTDBY_bm; //specify TCA 64x scaler, start TCB1 and use Run Standby mode.
 
   TCB1.INTCTRL = TCB_CAPT_bm;
+
+  attachInterrupt(digitalPinToInterrupt(leftJctPin), jct_int_handler, RISING);
+  attachInterrupt(digitalPinToInterrupt(rightJctPin), jct_int_handler, RISING);
+  attachInterrupt(digitalPinToInterrupt(crashSensorPin), jct_int_handler, FALLING);
 
   #endif
 
@@ -175,41 +182,28 @@ void loop(void) {
   
   if(nearBlock)
   {
-    //could probably refactor but cba - it's more readable this way too
 
     avgMotorSpeed = 140; //slow down robot
     //move forward under PID until distance sensor trips
-    delay_under_pid(1500);
+    delay_under_pid(2500);
      //give time for robot to straighten out before we start looking at distance to avoid tripping on surroundings.
-    distance_under_pid(block_threshold_mm);
 
     leftWheel->setSpeed(0);
     rightWheel->setSpeed(0);
 
-    //open_door();
-    //doorServo.write(servoOpenAngle); //extra tolerance
-    //delay(400);
-    /*
-    //in case line ends early, we use manual operation to drive as close as possible to the block. 
-    while (int(VL53.getDistance()) > block_interior_threshold_mm)
-    {
-      leftWheel->setSpeed(130);
-      rightWheel->setSpeed(140);
-    }
+    open_door();
     
+    distance_under_pid(block_interior_threshold_mm); //distance sensor can only see after door is opened.
     
-    leftWheel->setSpeed(0);
-    rightWheel->setSpeed(0);
-    */
-    //close door
-    //close_door();
-    
-    /*doorServo.write(servoCloseAngle);
-    delay(400); //wait for servo to move. */
     //scan block colour (sensor can be placed next to the castor)
     bool red = digitalRead(colDetectPin);
+    leftWheel->setSpeed(0);
+    rightWheel->setSpeed(0);
+    
+    close_door();
 
     uint8_t stationNode;
+
     if(red)
     {
       stationNode = RED_STATION;
@@ -229,7 +223,7 @@ void loop(void) {
     make_turn(&newDirect); //this should hopefully always be a reverse when going from the block - which will be done under PID.  
     blocksCollected++; 
     nearBlock = false;
-    
+
   }
   
   
@@ -243,18 +237,12 @@ void loop(void) {
 
     leftWheel->setSpeed(0);
     rightWheel->setSpeed(0);
-    // open door
-    //open_door();
-    /* doorServo.write(servoOpenAngle);
-    delay(400); // wait for servo to move. */
 
+    open_door();
     //reverse out
     delay_under_manual(station_reverse_timeout_ms, true);
-
     
-    //close_door();
-    /* doorServo.write(servoCloseAngle);
-    delay(50); */
+    close_door();
 
     uint8_t blockNode = 0; //YIPEEE RETURN TO BASE (will be overriden by the actual block index if not all of them have been picked up)
     //this also has the advantage of very easily being able to add the extension task of just taking blocks from 0 to the stations.
@@ -281,7 +269,7 @@ void loop(void) {
 void open_door() {
   for (int pos = servoCloseAngle; pos>= servoOpenAngle; pos--){
     doorServo.write(pos);
-    delay(3);
+    delay(10);
   }
 }
 // Function to change the position of the servo motor to close door 
@@ -290,7 +278,7 @@ void open_door() {
 void close_door() {
   for (int pos = servoOpenAngle; pos<= servoCloseAngle; pos++){
     doorServo.write(pos);
-    delay(5);
+    delay(20);
   }
 }
 
@@ -416,8 +404,16 @@ uint16_t get_colour_data()
 // Returns: void
 void pid_motor_regulate(int correction)
 {
-  leftWheel->setSpeed(constrain((avgMotorSpeed - correction), 0, 255));
-  rightWheel->setSpeed(constrain((avgMotorSpeed + correction), 0, 255));
+  if(insideEdge)
+  {
+    leftWheel->setSpeed(constrain((avgMotorSpeed - correction), 0, 255));
+    rightWheel->setSpeed(constrain((avgMotorSpeed + correction), 0, 255));
+  }
+  else
+  {
+    leftWheel->setSpeed(constrain((avgMotorSpeed + correction), 0, 255));
+    rightWheel->setSpeed(constrain((avgMotorSpeed - correction), 0, 255));
+  }
 }
 
 
@@ -450,7 +446,7 @@ void delay_under_manual(uint16_t timeout, bool reverse = false)
   delay(timeout); //hardcode time
 
   leftWheel->setSpeed(0);
-  leftWheel->setSpeed(0);
+  rightWheel->setSpeed(0);
 }
 
 void distance_under_pid(uint8_t threshold)
@@ -551,7 +547,22 @@ void make_turn(uint8_t* newDirect)
       //currDirect = *newDirect; direction remains same
       return; //skip rotation if going straight
     }
-
+    #if EDGE_FLIPPING
+    if(insideEdge)
+    {
+      if(desiredAngle < 0)
+      {
+        insideEdge = false;
+      }
+    }
+    else
+    {
+      if(desiredAngle > 0)
+      {
+        insideEdge = true;
+      }
+    }
+    #endif
     set_motor_directions(&desiredAngle);
 
     leftWheel->setSpeed(155);
@@ -623,6 +634,12 @@ void celebrate_and_finish() {
 }
 
 #ifdef ARDUINO_UNO
+
+ISR(PCINT2_vect)
+{
+  jct_int_handler();
+}
+
 //interrupt service routine for COMPA ATMega328p interrupt on Timer0. Used for numerically integrating gyroscope data at 333Hz
 ISR(TIMER0_COMPA_vect)
 {

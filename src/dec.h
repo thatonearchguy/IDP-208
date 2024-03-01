@@ -8,7 +8,7 @@ float deriv;
 int lastError;
 int correction;
 
-bool insideEdge; //used to tell PID which edge to follow (inside or outside)
+bool insideEdge = true; //used to tell PID which edge to follow (inside or outside)
 bool finishedRun = false;
 
 //Junction detection
@@ -57,3 +57,5 @@ uint16_t get_colour_data();
 void pid_motor_regulate(int correction);
 void get_next_turn(uint8_t* newDirection);
 uint8_t nextClosestBlock(int distance[numVert], uint8_t blockIndices[numBlocks], status blockStatus[numBlocks]);
+void open_door();
+void close_door();
