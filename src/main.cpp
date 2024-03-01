@@ -90,9 +90,13 @@ void setup() {
   initialise(graph);
 
   //set route for first package
-  destinationNode = 7;
-  dijkstra(graph, 0, destinationNode, bestPath, bestPathDirections, distance);
-  returnDirection(graph, bestPath, bestPathDirections);
+  /*
+  dijkstra(graph, 0, bestPath, bestPathDirections, distance);
+  destinationNode = nextClosestBlock(distance, blockIndices, blockStatus);
+  getOptimalPath(parent, destinationNode, bestPath, graph, bestPathDirections);
+  */
+  uint8_t baseNode = BASE_STATION;
+  start_new_journey(&baseNode, &destinationNode, &newDirect);
 
   doorServo.attach(servoPin);
   leftWheel->run(FORWARD);
@@ -222,7 +226,6 @@ void loop(void) {
       digitalWrite(greenLedPin, HIGH);
     }
     //block is now captured, load route for appropriate destination.
-    
     start_new_journey(&destinationNode, &stationNode, &newDirect);
 
     destinationNode = stationNode;
@@ -261,11 +264,12 @@ void loop(void) {
     uint8_t blockNode = 0; //YIPEEE RETURN TO BASE (will be overriden by the actual block index if not all of them have been picked up)
     //this also has the advantage of very easily being able to add the extension task of just taking blocks from 0 to the stations.
     // block is now delivered after , load route for appropriate destination.
+    /*
     if(!(blocksCollected >= sizeof(blockIndices)/sizeof(blockIndices[0])))
     {
       blockNode = blockIndices[blocksCollected];
     }
-
+    */
     start_new_journey(&destinationNode, &blockNode, &newDirect);
   
     destinationNode = blockNode;
@@ -586,11 +590,32 @@ void make_turn(uint8_t* newDirect)
   }
 
 }
+uint8_t nextClosestBlock(int distance[numVert], uint8_t blockIndices[], status blockStatus[numBlocks]) {
+    if (blocksCollected == numBlocks) {
+        return 0;
+    }
+    int minDis = MAX_DIST;
+    int closestBlockIndex = 0;
+    for (int i = 0; i < numBlocks; i++) {
+        if (blockStatus[i] == NOTCOMPLETED && distance[blockIndices[i]] < minDis) {
+            minDis = distance[blockIndices[i]];
+            closestBlockIndex = i;
+        }
+    }
+    blockStatus[closestBlockIndex] = COMPLETED;
+    return blockIndices[closestBlockIndex];
+}
 
 void start_new_journey(uint8_t* sourceNode, uint8_t* destinationNode, uint8_t* newDirect)
 {
-  dijkstra(graph, *sourceNode, *destinationNode, bestPath, bestPathDirections, distance);
-  returnDirection(graph, bestPath, bestPathDirections);
+  dijkstra(graph, *sourceNode, bestPath, bestPathDirections, distance, parent);
+  if (*destinationNode == 0) {
+    // destination not yet set, need to find closest block to set destination
+    // all blocks collected have been collected, nextClosestBlock will just return 0 (home square)
+    *destinationNode = nextClosestBlock(distance, blockIndices, blockStatus);
+  }
+  getOptimalPath(parent, *destinationNode, bestPath, graph, bestPathDirections);
+  //returnDirection(graph, bestPath, bestPathDirections);
   currNode = 0;
   *newDirect = bestPathDirections[currNode];
 }

@@ -24,9 +24,11 @@ direction bestPathDirections[numVert];
 int distance[numVert];
 bool nearBlock = false;
 bool nearStation = false;
-uint8_t destinationNode;
+uint8_t destinationNode = 0;
+int parent[numVert];
 
 uint8_t blockIndices[] = {7, 12, 14, 17};
+status blockStatus[] = {NOTCOMPLETED, NOTCOMPLETED, NOTCOMPLETED, NOTCOMPLETED};
 uint8_t blocksCollected = 0;
 
 //IMU
@@ -54,3 +56,4 @@ void delay_under_manual(uint16_t timeout, bool reverse = false);
 uint16_t get_colour_data();
 void pid_motor_regulate(int correction);
 void get_next_turn(uint8_t* newDirection);
+uint8_t nextClosestBlock(int distance[numVert], uint8_t blockIndices[numBlocks], status blockStatus[numBlocks]);

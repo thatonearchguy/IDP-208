@@ -1,5 +1,7 @@
-arduino-libraries/Arduino_LSM6DS3@^1.0.3
+mbed-sgrsn/Adafruit_TCS34725@0.0.0+sha.1bf53b314b01
+adafruit/Adafruit Motor Shield V2 Library@^1.1.3
 adafruit/Adafruit TCS34725@^1.4.4
 dfrobot/DFRobot_VL53L0X@^1.0.0
-adafruit/Adafruit Motor Shield V2 Library@^1.1.3
+bitbank2/BitBang_I2C@^2.2.1
+arduino-libraries/Arduino_LSM6DS3@^1.0.3
 dfrobot/DFRobot_URM09@^1.2.0
