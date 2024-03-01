@@ -90,11 +90,6 @@ void setup() {
   initialise(graph);
 
   //set route for first package
-  /*
-  dijkstra(graph, 0, bestPath, bestPathDirections, distance);
-  destinationNode = nextClosestBlock(distance, blockIndices, blockStatus);
-  getOptimalPath(parent, destinationNode, bestPath, graph, bestPathDirections);
-  */
   uint8_t baseNode = BASE_STATION;
   start_new_journey(&baseNode, &destinationNode, &newDirect);
 
@@ -264,12 +259,7 @@ void loop(void) {
     uint8_t blockNode = 0; //YIPEEE RETURN TO BASE (will be overriden by the actual block index if not all of them have been picked up)
     //this also has the advantage of very easily being able to add the extension task of just taking blocks from 0 to the stations.
     // block is now delivered after , load route for appropriate destination.
-    /*
-    if(!(blocksCollected >= sizeof(blockIndices)/sizeof(blockIndices[0])))
-    {
-      blockNode = blockIndices[blocksCollected];
-    }
-    */
+
     start_new_journey(&destinationNode, &blockNode, &newDirect);
   
     destinationNode = blockNode;
