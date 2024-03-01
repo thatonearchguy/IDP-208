@@ -276,7 +276,7 @@ void loop(void) {
 
 //------------------------Define helper functions---------------------------
 void get_nearest_block(uint8_t *sourceNode, uint8_t* blockNode) {
-  if(!(blocksCollected >= 2^(((sizeof(blockIndices)/sizeof(blockIndices[0])))-1)))
+  if(!(blocksCollected >= 2 << (((sizeof(blockIndices)/sizeof(blockIndices[0])))-1)))
   {
     int mindistance = MAX_DIST;
     for(uint8_t i = 0; i < (sizeof(blockIndices)/sizeof(blockIndices[0])); i ++)
