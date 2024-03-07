@@ -56,7 +56,7 @@ DFRobot_VL53L0X::~DFRobot_VL53L0X()
 
 void DFRobot_VL53L0X::begin(uint8_t i2c_addr){
   uint8_t val1;
-  delay(1500);
+  delay(300);
   _detailedData.i2cDevAddr = VL53L0X_DEF_I2C_ADDR; 
   dataInit(); 
   setDeviceAddress(i2c_addr);

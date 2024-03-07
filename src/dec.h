@@ -37,6 +37,9 @@ float yawData;
 bool turnReady = false;
 uint8_t newDirect = 1;
 bool integrating = false;
+unsigned long jctDetectTime = 0;
+bool recovery;
+bool clockwise_recovery = false;
 
 //------------------------Declare helper functions---------------------------
 bool verify_turn();
