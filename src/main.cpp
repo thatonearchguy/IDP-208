@@ -279,6 +279,8 @@ void loop(void) {
     //this also has the advantage of very easily being able to add the extension task of just taking blocks from 0 to the stations.
     // block is now delivered after , load route for appropriate destination.
 
+    turnReady = false;
+    recovery = false; //prevent tripping on the junction edge affecting the result. 
     start_new_journey(&destinationNode, &blockNode, &newDirect);
 
     destinationNode = blockNode;
@@ -287,7 +289,6 @@ void loop(void) {
     make_turn(&newDirect); // this should hopefully be a reverse, and after calibration manual reverse should go far back enough to allow rest to be done under PID.
     nearStation = false;
     avgMotorSpeed = 220;
-    turnReady = false; //prevent tripping on the junction edge affecting the result. 
   }
   
 }
@@ -508,7 +509,7 @@ void delay_under_manual(uint16_t timeout, bool reverse = false)
 void distance_under_pid(uint8_t threshold)
 {
   unsigned long time = millis();
-  while((int(VL53.getDistance()) > threshold) && (millis() - time < 1800))
+  while((int(VL53.getDistance()) > threshold) && (millis() - time < distance_pid_timeout))
   {
     uint16_t valAvg = get_colour_data();
     calculate_pid(valAvg, &correction);
@@ -617,6 +618,7 @@ void make_turn(uint8_t* newDirect)
       LOG_NEWLINE("Going straight!");
       leftWheel->run(FORWARD);
       rightWheel->run(FORWARD);
+      avgMotorSpeed = 220;
       //currDirect = *newDirect; direction remains same
       return; //skip rotation if going straight
     }
@@ -685,6 +687,17 @@ uint8_t nextClosestBlock(int distance[numVert], uint8_t blockIndices[], status b
         }
     }
     blockStatus[closestBlockIndex] = COMPLETED;
+    //WORKAROUND - one of the nodes is way longer than the others
+    if(blockIndices[closestBlockIndex] == 14)
+    {
+      wall_threshold_mm = 60;
+      distance_pid_timeout = 2300;
+    }
+    else
+    {
+      wall_threshold_mm = 90;
+      distance_pid_timeout = 1400;
+    }
     return blockIndices[closestBlockIndex];
 }
 
@@ -706,7 +719,7 @@ void celebrate_and_finish() {
 //PID impossible due to geometry of starting region, so we manually drive until we cross the threshold.
       leftWheel->setSpeed(140);
       rightWheel->setSpeed(140);
-      delay(800); //calibrate for however long it takes to cross the threshold.
+      delay(1300); //calibrate for however long it takes to cross the threshold.
       leftWheel->setSpeed(0);
       rightWheel->setSpeed(0);
       while(1); //We're now finished, infinite loop until power turned off.

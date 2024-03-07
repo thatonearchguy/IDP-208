@@ -55,7 +55,7 @@ uint8_t block_interior_threshold_mm = 42;
 uint8_t wall_threshold_mm = 90; //adjust for station geometry
 
 uint16_t station_reverse_timeout_ms = 150;
-uint16_t station_approach_timeout_ms = 2500;
+uint16_t station_approach_timeout_ms = 2900;
 
 //Servo
 const uint8_t servoOpenAngle = 64;
@@ -68,7 +68,8 @@ uint16_t rotColLineThreshold = 140;
 uint16_t forwardDelayTime = 300;
 float Kp = 0.2;
 float Ki = 0;
-float Kd = 0.15;
+float Kd = 0.2;
 const int max_integ_val = 300;
 const int min_integ_val = -300;
 const uint16_t jctTimeout = 600;    
+unsigned long distance_pid_timeout = 1400;
