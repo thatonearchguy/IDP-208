@@ -246,18 +246,11 @@ void loop(void) {
     //block is now captured, load route for appropriate destination.
     start_new_journey(&destinationNode, &stationNode, &newDirect);
 
-    for(uint8_t blockIndex = 0; blockIndex < sizeof(blockIndices)/sizeof(blockIndices[0]); blockIndex ++)
-    {
-      if(blockIndices[blockIndex] == destinationNode)
-      {
-        blocksCollected |= (1 << blockIndex);
-      }
-    }
-
     destinationNode = stationNode;
-    delay(2000); //wait as required by task specification
+    //delay(6000); //wait for 5+ seconds as required by task specification
 
-    make_turn(&newDirect); //this should hopefully always be a reverse when going from the block - which will be done under PID.   
+    make_turn(&newDirect); //this should hopefully always be a reverse when going from the block - which will be done under PID.  
+    blocksCollected++; 
     nearBlock = false;
 
   }
@@ -302,26 +295,7 @@ void loop(void) {
 
 //Very arduino-esque - until this point lol, now it gets real
 
-
 //------------------------Define helper functions---------------------------
-void get_nearest_block(uint8_t *sourceNode, uint8_t* blockNode) {
-  if(!(blocksCollected >= 2 << (((sizeof(blockIndices)/sizeof(blockIndices[0])))-1)))
-  {
-    int mindistance = MAX_DIST;
-    for(uint8_t i = 0; i < (sizeof(blockIndices)/sizeof(blockIndices[0])); i ++)
-    {
-      if(!(blocksCollected & (1 << i))) {
-        dijkstra(graph, *sourceNode, blockIndices[i], bestPath, bestPathDirections, distance);
-
-        if(distance[blockIndices[i]] < mindistance) {
-          mindistance = distance[blockIndices[i]];
-          *blockNode = blockIndices[i];
-        }
-      }
-    }
-  }  
-}
-
 // Function to change the position of the servo motor to open door
 // Parameters: void
 // Returns: void
@@ -727,7 +701,6 @@ uint8_t nextClosestBlock(int distance[numVert], uint8_t blockIndices[], status b
     return blockIndices[closestBlockIndex];
 }
 
-
 void start_new_journey(uint8_t* sourceNode, uint8_t* destinationNode, uint8_t* newDirect)
 {
   dijkstra(graph, *sourceNode, bestPath, bestPathDirections, distance, parent);
@@ -762,11 +735,6 @@ ISR(PCINT2_vect)
 }
 
 //interrupt service routine for COMPA ATMega328p interrupt on Timer0. Used for numerically integrating gyroscope data at 333Hz
-ISR(PCINT2_vect)
-{
-  jct_int_handler();
-}
-
 ISR(TIMER0_COMPA_vect)
 {
   //preload counter value to trip every 3ms with prescaler - see datasheet
