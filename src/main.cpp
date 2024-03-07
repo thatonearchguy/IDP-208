@@ -120,10 +120,6 @@ void setup() {
   PCMSK2 |= ((1 << crashSensorPin) | (1 << leftJctPin) | (1 << rightJctPin)); //ASSUMES WE ARE CONNECTED ON D BANK!!
   //PCMSK2 |= B00001101; // PCINT16 (pin 0), PCINT18 (pin 2), PCINT1NT19 (pin 3)
 
-  PCICR |= B00000100; // Enables Ports D Pin Change Interrupts
-  PCMSK2 |= ((1 << crashSensorPin) | (1 << leftJctPin) | (1 << rightJctPin)); //ASSUMES WE ARE CONNECTED ON D BANK!!
-  //PCMSK2 |= B00001101; // PCINT16 (pin 0), PCINT18 (pin 2), PCINT1NT19 (pin 3)
-
   #endif
 
   #ifdef ARDUINO_WIFI
