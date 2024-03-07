@@ -46,28 +46,30 @@ const uint8_t timer2_of_ms = 16; // ISR (looping) period set manually
 const uint8_t blue_led_timeouts = uint8_t((1000) / (blueLedUpdRate * timer2_of_ms)); // determines when led flashes
 
 //Colour sensor
-int idealLightValue = 350; // threshold value for white
-uint8_t numAvgSamples = 2; // take average of numAvgSamples light sensor reading
+int idealLightValue = 240; // threshold value for white
+uint8_t numAvgSamples = 1; // take average of numAvgSamples light sensor reading
 
 //Ranging Sensor
-uint8_t block_threshold_mm = 90; //adjust for chassis geometry
-uint8_t block_interior_threshold_mm = 85;
-uint8_t wall_threshold_mm = 80; //adjust for station geometry
+uint8_t block_threshold_mm = 42; //adjust for chassis geometry - 42mm door
+uint8_t block_interior_threshold_mm = 42;
+uint8_t wall_threshold_mm = 90; //adjust for station geometry
 
-uint16_t station_reverse_timeout_ms = 800;
-uint16_t station_approach_timeout_ms = 4000;
+uint16_t station_reverse_timeout_ms = 150;
+uint16_t station_approach_timeout_ms = 2900;
 
 //Servo
-const uint8_t servoOpenAngle = 60;
-const uint8_t servoCloseAngle = 130;
+const uint8_t servoOpenAngle = 64;
+const uint8_t servoCloseAngle = 115;
 
 //PID
-uint8_t avgMotorSpeed = 225; 
-const uint16_t rotDelayTime = 155;
-const uint16_t rotColLineThreshold = 190;
-const uint16_t forwardDelayTime = 350;
+uint8_t avgMotorSpeed = 220; 
+const uint16_t rotDelayTime = 220;
+uint16_t rotColLineThreshold = 140;
+uint16_t forwardDelayTime = 300;
 float Kp = 0.2;
 float Ki = 0;
-float Kd = 0;
+float Kd = 0.2;
 const int max_integ_val = 300;
 const int min_integ_val = -300;
+const uint16_t jctTimeout = 600;    
+unsigned long distance_pid_timeout = 1400;

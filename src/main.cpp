@@ -12,6 +12,8 @@
 #include "dec.h" //global variables & function prototypes
 
 #define DEBUG 0 //added debug switch to save some SRAM (optimise out all the serial calls)
+#define EDGE_FLIPPING 0
+#define DISABLE_SERVO 0
 
 #if DEBUG
   #define LOG_NEWLINE(msg) Serial.println(msg)
@@ -41,6 +43,7 @@ uint8_t currDirect = ABS_FORWARD; //default is forwards
 void setup() {
   #if DEBUG
   Serial.begin(9600);
+  delay(100);
   #endif
   if (!AFMS.begin()) {         // create with the default frequency 1.6KHz
     LOG_NEWLINE(F("Could not find Motor Shield. Check wiring."));
@@ -60,11 +63,11 @@ void setup() {
 
   //Initialise ToF sensor (VL53L0X) in continuous, high accuracy mode. 
   VL53.begin(0x50);
-  delay(20);
+  delay(10);
   VL53.setMode(VL53.eContinuous,VL53.eHigh);
-  delay(20);
+  delay(10);
   VL53.start();
-  delay(100);
+  delay(50);
 
   if(!TCS.begin()) {
     LOG_NEWLINE(F("Could not find colour sensor. Check wiring."));
@@ -83,18 +86,15 @@ void setup() {
   pinMode(greenLedPin, OUTPUT);
   pinMode(blueLedPin, OUTPUT);
 
-  
-
   correction = 0;
 
   initialise(graph);
 
   //set route for first package
-  destinationNode = 7;
-  dijkstra(graph, 0, destinationNode, bestPath, bestPathDirections, distance);
-  returnDirection(graph, bestPath, bestPathDirections);
+  uint8_t baseNode = BASE_STATION;
+  start_new_journey(&baseNode, &destinationNode, &newDirect);
 
-  doorServo.attach(servoPin);
+  //doorServo.attach(servoPin);
   leftWheel->run(FORWARD);
   rightWheel->run(FORWARD);
 
@@ -116,6 +116,9 @@ void setup() {
   TCCR2B = 0;          // Init Timer2B
   TCCR2B |= B00000111; // Prescaler = 1024
   TIMSK2 |= B00000001; // Enable Timer Overflow Interrupt
+  PCICR |= B00000100; // Enables Ports D Pin Change Interrupts
+  PCMSK2 |= ((1 << crashSensorPin) | (1 << leftJctPin) | (1 << rightJctPin)); //ASSUMES WE ARE CONNECTED ON D BANK!!
+  //PCMSK2 |= B00001101; // PCINT16 (pin 0), PCINT18 (pin 2), PCINT1NT19 (pin 3)
 
   PCICR |= B00000100; // Enables Ports D Pin Change Interrupts
   PCMSK2 |= ((1 << crashSensorPin) | (1 << leftJctPin) | (1 << rightJctPin)); //ASSUMES WE ARE CONNECTED ON D BANK!!
@@ -156,6 +159,8 @@ void setup() {
   delay(200); //debounce
   digitalWrite(redLedPin, LOW);
   digitalWrite(greenLedPin, LOW);
+  delay_under_manual(600);
+  turnReady = false;
 }
 
 void loop(void) {
@@ -168,8 +173,8 @@ void loop(void) {
 
   if(turnReady) //if a junction was detected
   {
-    leftWheel->setSpeed(0);
-    rightWheel->setSpeed(0);
+    //leftWheel->setSpeed(0);
+    //rightWheel->setSpeed(0);
     if(!finishedRun) //if we haven't picked up all the blocks
     {
       get_next_turn(&newDirect); //get the next turn from the navigation
@@ -181,14 +186,39 @@ void loop(void) {
       celebrate_and_finish();
     }
   }
+
+  if(recovery)
+  {
+    //WORKAROUND - chassis and motor movement is very unreliable, we put the junction detection on a timeout so if we detect within 2 seconds we need to recover instead of turn. 
+    int desiang = (clockwise_recovery) ? 90 : -90;
+    set_motor_directions(&desiang);
+    leftWheel->setSpeed(100);
+    rightWheel->setSpeed(100);
+    
+    //delay(40); //allow robot to move away from original line before we start scanning with the colour sensor. 
+    uint16_t valAvg = get_colour_data();
+    while(valAvg < idealLightValue)
+    {
+      valAvg = get_colour_data();
+      //LOG_NEWLINE(valAvg);
+    } //wait until line detected again
+    leftWheel->setSpeed(0);
+    rightWheel->setSpeed(0);
+    leftWheel->run(FORWARD);
+    rightWheel->run(FORWARD);
+    delay(40);
+    avgMotorSpeed = 160;
+    recovery = false;
+    turnReady = false; //prevent robot then making the next turn after the line has been found again. 
+    jctDetectTime += 400; //catch subsequent recoveries
+  }
   
   if(nearBlock)
   {
-    //could probably refactor but cba - it's more readable this way too
 
-    avgMotorSpeed = 140; //slow down robot
+    avgMotorSpeed = 170; //slow down robot
     //move forward under PID until distance sensor trips
-    delay_under_pid(2500);
+    delay_under_pid(550);
      //give time for robot to straighten out before we start looking at distance to avoid tripping on surroundings.
 
     leftWheel->setSpeed(0);
@@ -196,16 +226,17 @@ void loop(void) {
 
     open_door();
     
-    distance_under_pid(block_interior_threshold_mm); //distance sensor can only see after door is opened.
+    distance_under_pid(wall_threshold_mm); //distance sensor can only see after door is opened.
     
     //scan block colour (sensor can be placed next to the castor)
-    bool red = digitalRead(colDetectPin);
     leftWheel->setSpeed(0);
     rightWheel->setSpeed(0);
+    bool red = digitalRead(colDetectPin);
     
     close_door();
 
     uint8_t stationNode;
+
     if(red)
     {
       stationNode = RED_STATION;
@@ -217,7 +248,6 @@ void loop(void) {
       digitalWrite(greenLedPin, HIGH);
     }
     //block is now captured, load route for appropriate destination.
-    
     start_new_journey(&destinationNode, &stationNode, &newDirect);
 
     for(uint8_t blockIndex = 0; blockIndex < sizeof(blockIndices)/sizeof(blockIndices[0]); blockIndex ++)
@@ -233,7 +263,7 @@ void loop(void) {
 
     make_turn(&newDirect); //this should hopefully always be a reverse when going from the block - which will be done under PID.   
     nearBlock = false;
-    
+
   }
   
   
@@ -241,7 +271,7 @@ void loop(void) {
   {
     // could probably refactor but cba - it's more readable this way too
 
-    avgMotorSpeed = 140; // slow down robot
+    avgMotorSpeed = 170; // slow down robot
 
     delay_under_pid(station_approach_timeout_ms);
 
@@ -250,23 +280,26 @@ void loop(void) {
 
     open_door();
     //reverse out
+    delay_under_manual(230, false);
+
+    delay(100);
     delay_under_manual(station_reverse_timeout_ms, true);
     
     close_door();
-
     uint8_t blockNode = 0; //YIPEEE RETURN TO BASE (will be overriden by the actual block index if not all of them have been picked up)
     //this also has the advantage of very easily being able to add the extension task of just taking blocks from 0 to the stations.
     // block is now delivered after , load route for appropriate destination.
-    get_nearest_block(&destinationNode, &blockNode);
 
+    turnReady = false;
+    recovery = false; //prevent tripping on the junction edge affecting the result. 
     start_new_journey(&destinationNode, &blockNode, &newDirect);
-  
+
     destinationNode = blockNode;
     digitalWrite(redLedPin, LOW); //don't care about the colour, just write both GPIOs to low.
     digitalWrite(greenLedPin, LOW);
     make_turn(&newDirect); // this should hopefully be a reverse, and after calibration manual reverse should go far back enough to allow rest to be done under PID.
     nearStation = false;
-    avgMotorSpeed = 225;
+    avgMotorSpeed = 220;
   }
   
 }
@@ -297,19 +330,31 @@ void get_nearest_block(uint8_t *sourceNode, uint8_t* blockNode) {
 // Parameters: void
 // Returns: void
 void open_door() {
+  #if !DISABLE_SERVO
+  doorServo.write(servoCloseAngle);
+  doorServo.attach(servoPin);
   for (int pos = servoCloseAngle; pos>= servoOpenAngle; pos--){
     doorServo.write(pos);
-    delay(3);
+    delay(10);
   }
+  doorServo.detach();
+  delay(100);
+  #endif
 }
 // Function to change the position of the servo motor to close door 
 // Parameters: void
 // Returns: void
 void close_door() {
+  #if !DISABLE_SERVO
+  //doorServo.write(servoOpenAngle);
+  doorServo.attach(servoPin);
   for (int pos = servoOpenAngle; pos<= servoCloseAngle; pos++){
     doorServo.write(pos);
-    delay(5);
+    delay(10);
   }
+  doorServo.detach();
+  delay(100);
+  #endif
 }
 
 // Function to numerically integrate gyro data to calculate the yaw angle 
@@ -328,8 +373,18 @@ void jct_int_handler()
   leftJctDetect = digitalRead(leftJctPin);
   rightJctDetect = digitalRead(rightJctPin);
   tJctDetect = leftJctDetect & rightJctDetect;
-  
-  turnReady = true;
+  if((millis() - jctDetectTime > jctTimeout))
+  {
+    //jctDetectTime = millis();
+    turnReady = true;
+  }
+  else if(!turnReady)
+  {
+    recovery = true;
+    if(leftJctDetect) clockwise_recovery = false;
+    else if(rightJctDetect) clockwise_recovery = true;
+  }
+
 
 }
 
@@ -434,8 +489,16 @@ uint16_t get_colour_data()
 // Returns: void
 void pid_motor_regulate(int correction)
 {
-  leftWheel->setSpeed(constrain((avgMotorSpeed - correction), 0, 255));
-  rightWheel->setSpeed(constrain((avgMotorSpeed + correction), 0, 255));
+  if(insideEdge)
+  {
+    leftWheel->setSpeed(constrain((avgMotorSpeed - correction), 0, 255));
+    rightWheel->setSpeed(constrain((avgMotorSpeed + correction), 0, 255));
+  }
+  else
+  {
+    leftWheel->setSpeed(constrain((avgMotorSpeed + correction), 0, 255));
+    rightWheel->setSpeed(constrain((avgMotorSpeed - correction), 0, 255));
+  }
 }
 
 
@@ -452,8 +515,8 @@ void delay_under_pid(uint16_t timeout)
 
 void delay_under_manual(uint16_t timeout, bool reverse = false)
 {
-  leftWheel->setSpeed(180);
-  rightWheel->setSpeed(190);
+  leftWheel->setSpeed(225);
+  rightWheel->setSpeed(225);
 
   //hardcode distance to the pivot point of the robot
   leftWheel->run(BACKWARD);
@@ -463,17 +526,20 @@ void delay_under_manual(uint16_t timeout, bool reverse = false)
   {
     leftWheel->run(FORWARD);
     rightWheel->run(FORWARD);
+    leftWheel->setSpeed(210);
+    rightWheel->setSpeed(210);
   }
 
   delay(timeout); //hardcode time
 
   leftWheel->setSpeed(0);
-  leftWheel->setSpeed(0);
+  rightWheel->setSpeed(0);
 }
 
 void distance_under_pid(uint8_t threshold)
 {
-  while(int(VL53.getDistance()) > threshold)
+  unsigned long time = millis();
+  while((int(VL53.getDistance()) > threshold) && (millis() - time < distance_pid_timeout))
   {
     uint16_t valAvg = get_colour_data();
     calculate_pid(valAvg, &correction);
@@ -535,14 +601,22 @@ void make_turn(uint8_t* newDirect)
   if(*newDirect == REVERSE)
   {
     //digitalWrite(redLedPin, HIGH);
-    Kp = 0.00; //WORKAROUND - robot control parameters differ massively when in reverse due to flipped geometry. Kp -> 0 effectively disables PID while utilising existing loop.
+    Kp = 0;
+    Kd = 0; //WORKAROUND - robot control parameters differ massively when in reverse due to flipped geometry. Kp -> 0 effectively disables PID while utilising existing loop.
     leftWheel->run(BACKWARD);
     rightWheel->run(BACKWARD);
+    leftWheel->setSpeed(210);
+    rightWheel->setSpeed(200);
+    delay(350);
+    forwardDelayTime = 200;
+    //insideEdge = false;
     //do not update currDirect to allow next turn to happen correctly.
   } 
   else
   {
+    //insideEdge = true;
     Kp = 0.2; //when not reversing, ensure Kp is always set to the appropriate value.
+    Kd = 0.15;
     if (*newDirect == FINISH)
     {
       finishedRun = true;
@@ -559,21 +633,52 @@ void make_turn(uint8_t* newDirect)
     
     calculate_angle_to_rotate(&currDirect, newDirect, &desiredAngle);
     
-    delay_under_manual(forwardDelayTime); //move forward until pivot hit
+    if(abs(desiredAngle) > 90)
+    {
+      delay_under_manual(240); //move forward until pivot hit
+
+    }
+    else
+    {
+      delay_under_manual(forwardDelayTime);
+    }
 
     if(desiredAngle == 0)
     {
       LOG_NEWLINE("Going straight!");
       leftWheel->run(FORWARD);
       rightWheel->run(FORWARD);
+      avgMotorSpeed = 220;
       //currDirect = *newDirect; direction remains same
       return; //skip rotation if going straight
     }
-
+    #if EDGE_FLIPPING
+    if(insideEdge)
+    {
+      if(desiredAngle < 0)
+      {
+        insideEdge = false;
+      }
+    }
+    else
+    {
+      if(desiredAngle > 0)
+      {
+        insideEdge = true;
+      }
+    }
+    #endif
     set_motor_directions(&desiredAngle);
-
-    leftWheel->setSpeed(155);
-    rightWheel->setSpeed(155);
+    leftWheel->setSpeed(140);
+    rightWheel->setSpeed(140);
+    
+    if(abs(desiredAngle) > 90)
+    {
+      leftWheel->setSpeed(150);
+      rightWheel->setSpeed(150);
+    }
+    
+    //WORKAROND - Motor stalls after extended period of rotation at 120, we increase this to 150 for 180 degree turns. 
 
     //WORKAROUND - IMU unavailable so we use the colour sensor to detect when we've reached the line again. 
     for(int i = 0; i < abs(desiredAngle); i+=90) //for loop will run this a second time to complete 180 degree turns correctly.
@@ -590,20 +695,53 @@ void make_turn(uint8_t* newDirect)
 
     leftWheel->setSpeed(0);
     rightWheel->setSpeed(0);
-
     leftWheel->run(FORWARD);
     rightWheel->run(FORWARD);
     currDirect = *newDirect; //orientation does not change in reverse.
-    avgMotorSpeed = 225;
+    avgMotorSpeed = 220;
+    forwardDelayTime = 300;
+    jctDetectTime = millis();
   }
 
+}
+uint8_t nextClosestBlock(int distance[numVert], uint8_t blockIndices[], status blockStatus[numBlocks]) {
+    if (blocksCollected == numBlocks) {
+        return 0;
+    }
+    int minDis = MAX_DIST;
+    int closestBlockIndex = 0;
+    for (int i = 0; i < numBlocks; i++) {
+        if (blockStatus[i] == NOTCOMPLETED && distance[blockIndices[i]] < minDis) {
+            minDis = distance[blockIndices[i]];
+            closestBlockIndex = i;
+        }
+    }
+    blockStatus[closestBlockIndex] = COMPLETED;
+    //WORKAROUND - one of the nodes is way longer than the others
+    if(blockIndices[closestBlockIndex] == 14)
+    {
+      wall_threshold_mm = 60;
+      distance_pid_timeout = 2300;
+    }
+    else
+    {
+      wall_threshold_mm = 90;
+      distance_pid_timeout = 1400;
+    }
+    return blockIndices[closestBlockIndex];
 }
 
 
 void start_new_journey(uint8_t* sourceNode, uint8_t* destinationNode, uint8_t* newDirect)
 {
-  dijkstra(graph, *sourceNode, *destinationNode, bestPath, bestPathDirections, distance);
-  returnDirection(graph, bestPath, bestPathDirections);
+  dijkstra(graph, *sourceNode, bestPath, bestPathDirections, distance, parent);
+  if (*destinationNode == 0) {
+    // destination not yet set, need to find closest block to set destination
+    // all blocks collected have been collected, nextClosestBlock will just return 0 (home square)
+    *destinationNode = nextClosestBlock(distance, blockIndices, blockStatus);
+  }
+  getOptimalPath(parent, *destinationNode, bestPath, graph, bestPathDirections);
+  //returnDirection(graph, bestPath, bestPathDirections);
   currNode = 0;
   *newDirect = bestPathDirections[currNode];
 }
@@ -612,7 +750,7 @@ void celebrate_and_finish() {
 //PID impossible due to geometry of starting region, so we manually drive until we cross the threshold.
       leftWheel->setSpeed(140);
       rightWheel->setSpeed(140);
-      delay(800); //calibrate for however long it takes to cross the threshold.
+      delay(1300); //calibrate for however long it takes to cross the threshold.
       leftWheel->setSpeed(0);
       rightWheel->setSpeed(0);
       while(1); //We're now finished, infinite loop until power turned off.
@@ -621,6 +759,12 @@ void celebrate_and_finish() {
 }
 
 #ifdef ARDUINO_UNO
+
+ISR(PCINT2_vect)
+{
+  jct_int_handler();
+}
+
 //interrupt service routine for COMPA ATMega328p interrupt on Timer0. Used for numerically integrating gyroscope data at 333Hz
 ISR(PCINT2_vect)
 {

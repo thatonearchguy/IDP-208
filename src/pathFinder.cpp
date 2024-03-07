@@ -12,35 +12,17 @@ int example()
     // contains directions to take in path order
     direction bestPathDirections[numVert];
 
+    // declare parents
+    int parent[numVert];
+
     // distance[i] will hold the shortest distance from source to i
     int distance[numVert]; 
 
-    // fill bestPath with the best path
-    dijkstra(graph, 17, 5, bestPath, bestPathDirections, distance);
+    dijkstra(graph, 0, bestPath, bestPathDirections, distance, parent);
+    getOptimalPath(parent, 7, bestPath, graph, bestPathDirections);
 
-    // fills bestPathDirections with the directions to take in path order
-    returnDirection(graph, bestPath, bestPathDirections);
-
-    /*
-    // for printing best path
-    printPath(bestPath, bestPathDirections);
-
-    // prints distance from source to every node
-    printDistance(distance);
-
-    // more checks
-    dijkstra(graph, 14, 6, bestPath, bestPathDirections, distance);
-    returnDirection(graph, bestPath, bestPathDirections);
-    printPath(bestPath, bestPathDirections);
-
-    dijkstra(graph, 7, 6, bestPath, bestPathDirections, distance);
-    returnDirection(graph, bestPath, bestPathDirections);
-    printPath(bestPath, bestPathDirections);
-
-    dijkstra(graph, 12, 5, bestPath, bestPathDirections, distance);
-    returnDirection(graph, bestPath, bestPathDirections);
-    printPath(bestPath, bestPathDirections);
-    */
+    // printDistance(distance);
+    // printPath(bestPath, bestPathDirections);
     return 0;
 }
 
@@ -79,7 +61,13 @@ int minDistance(int distance[numVert], bool completedSet[numVert])
     return min_index;
 }
 
-void dijkstra(node graph[numVert][numVert], int source, int destination, int bestPath[numVert], direction bestPathDirections[numVert], int distance[numVert]) {
+void getOptimalPath(int parent[numVert], int destination, int bestPath[numVert], node graph[numVert][numVert], direction bestPathDirections[numVert]) {
+    int index = 0;
+    returnPath(parent, destination, bestPath, &index);
+    returnDirection(graph, bestPath, bestPathDirections);
+}
+
+void dijkstra(node graph[numVert][numVert], int source, int bestPath[numVert], direction bestPathDirections[numVert], int distance[numVert], int parent[numVert]) {
  
     bool completedSet[numVert]; // completedSet[i] will be true if vertex i's distance to 
     // source can no longer be decreased.
@@ -96,7 +84,6 @@ void dijkstra(node graph[numVert][numVert], int source, int destination, int bes
             bestPath[i] = -1;
         }
     // initialise parent set
-    int parent[numVert];
     for (int i = 0; i < numVert; i++) {
         parent[i] = srcParent;
     }
@@ -125,12 +112,6 @@ void dijkstra(node graph[numVert][numVert], int source, int destination, int bes
                     distance[vert] = distance[u] + graph[u][vert].distance;
                 }
     }
- 
-    // print the constructed distance array
-
-    // return best path as an array
-    int index = 0;
-    returnPath(parent, destination, bestPath, &index);
 }
 
 
@@ -188,7 +169,7 @@ void initialise(node graph[numVert][numVert]) {
     graph[16][17].direction = DOWN; graph[17][16].direction = REVERSE;
 } 
 
-// replace with Serial.write()
+// replace with Serial.println()
 /*
 void printDirection(direction dir) {
     switch (dir) {
