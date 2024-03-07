@@ -258,8 +258,6 @@ void loop(void) {
   
   if(nearStation)
   {
-    // could probably refactor but cba - it's more readable this way too
-
     avgMotorSpeed = 170; // slow down robot
 
     delay_under_pid(station_approach_timeout_ms);
