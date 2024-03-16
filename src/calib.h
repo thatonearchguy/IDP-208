@@ -52,20 +52,20 @@ uint8_t numAvgSamples = 1; // take average of numAvgSamples light sensor reading
 //Ranging Sensor
 uint8_t block_threshold_mm = 42; //adjust for chassis geometry - 42mm door
 uint8_t block_interior_threshold_mm = 42;
-uint8_t wall_threshold_mm = 90; //adjust for station geometry
+uint8_t wall_threshold_mm = 88; //adjust for station geometry
 
 uint16_t station_reverse_timeout_ms = 150;
 uint16_t station_approach_timeout_ms = 2900;
 
 //Servo
-const uint8_t servoOpenAngle = 64;
+const uint8_t servoOpenAngle = 63;
 const uint8_t servoCloseAngle = 115;
 
 //PID
 uint8_t avgMotorSpeed = 220; 
 const uint16_t rotDelayTime = 220;
 uint16_t rotColLineThreshold = 140;
-uint16_t forwardDelayTime = 300;
+uint16_t forwardDelayTime = 280;
 float Kp = 0.2;
 float Ki = 0;
 float Kd = 0.2;

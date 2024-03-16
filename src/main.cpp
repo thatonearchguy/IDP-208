@@ -10,6 +10,8 @@
 #include "pathFinder.h"
 #include "calib.h" //calibration constants
 #include "dec.h" //global variables & function prototypes
+#include <avr/wdt.h>
+
 
 #define DEBUG 0 //added debug switch to save some SRAM (optimise out all the serial calls)
 #define EDGE_FLIPPING 0
@@ -99,7 +101,7 @@ void setup() {
   rightWheel->run(FORWARD);
 
   //timer0 - repurposed for delay and numerical integration.
-  //we don't need millis or micros in our program, and Servo.h uses timer1 so we're safe to take over timer0.
+  //we don't need millis() or micros() in our program, and Servo.h uses timer1 so we're safe to take over timer0.
   //but to not break delay, we must adjust the microseconds per tick value in Arduino core's wiring.c
   noInterrupts();
 
@@ -191,36 +193,34 @@ void loop(void) {
     leftWheel->setSpeed(100);
     rightWheel->setSpeed(100);
     
-    //delay(40); //allow robot to move away from original line before we start scanning with the colour sensor. 
     uint16_t valAvg = get_colour_data();
     while(valAvg < idealLightValue)
     {
       valAvg = get_colour_data();
-      //LOG_NEWLINE(valAvg);
+      LOG_NEWLINE(valAvg);
     } //wait until line detected again
     leftWheel->setSpeed(0);
     rightWheel->setSpeed(0);
     leftWheel->run(FORWARD);
     rightWheel->run(FORWARD);
     delay(40);
-    avgMotorSpeed = 160;
     recovery = false;
     turnReady = false; //prevent robot then making the next turn after the line has been found again. 
-    jctDetectTime += 400; //catch subsequent recoveries
+    jctDetectTime += 500; //catch subsequent recoveries
   }
   
   if(nearBlock)
   {
 
-    avgMotorSpeed = 170; //slow down robot
+    avgMotorSpeed = 150; //slow down robot
     //move forward under PID until distance sensor trips
+    open_door();
     delay_under_pid(550);
      //give time for robot to straighten out before we start looking at distance to avoid tripping on surroundings.
 
     leftWheel->setSpeed(0);
     rightWheel->setSpeed(0);
 
-    open_door();
     
     distance_under_pid(wall_threshold_mm); //distance sensor can only see after door is opened.
     
@@ -247,11 +247,13 @@ void loop(void) {
     start_new_journey(&destinationNode, &stationNode, &newDirect);
 
     destinationNode = stationNode;
-    //delay(6000); //wait for 5+ seconds as required by task specification
+    delay(1333); //wait for 5+ seconds as required by task specification
 
     make_turn(&newDirect); //this should hopefully always be a reverse when going from the block - which will be done under PID.  
     blocksCollected++; 
     nearBlock = false;
+    turnReady = false;
+    recovery = false;
 
   }
   
@@ -273,13 +275,13 @@ void loop(void) {
     delay_under_manual(station_reverse_timeout_ms, true);
     
     close_door();
-    uint8_t blockNode = 0; //YIPEEE RETURN TO BASE (will be overriden by the actual block index if not all of them have been picked up)
+    uint8_t blockNode = 0; //Zero corresponds to the base station - (will be overriden by the actual block index if not all of them have been picked up)
     //this also has the advantage of very easily being able to add the extension task of just taking blocks from 0 to the stations.
-    // block is now delivered after , load route for appropriate destination.
 
     turnReady = false;
     recovery = false; //prevent tripping on the junction edge affecting the result. 
     start_new_journey(&destinationNode, &blockNode, &newDirect);
+    // block is now delivered after , load route for appropriate destination.
 
     destinationNode = blockNode;
     digitalWrite(redLedPin, LOW); //don't care about the colour, just write both GPIOs to low.
@@ -291,12 +293,11 @@ void loop(void) {
   
 }
 
-//Very arduino-esque - until this point lol, now it gets real
-
 //------------------------Define helper functions---------------------------
-// Function to change the position of the servo motor to open door
-// Parameters: void
-// Returns: void
+
+/// @brief Function to change the position of the servo motor to open door
+/// @param void
+/// @return void
 void open_door() {
   #if !DISABLE_SERVO
   doorServo.write(servoCloseAngle);
@@ -309,9 +310,10 @@ void open_door() {
   delay(100);
   #endif
 }
-// Function to change the position of the servo motor to close door 
-// Parameters: void
-// Returns: void
+
+/// @brief Function to change the position of the servo motor to close door 
+/// @param void
+/// @return void
 void close_door() {
   #if !DISABLE_SERVO
   //doorServo.write(servoOpenAngle);
@@ -325,17 +327,17 @@ void close_door() {
   #endif
 }
 
-// Function to numerically integrate gyro data to calculate the yaw angle 
-// Parameters: void
-// Returns: void
+/// @brief Function to numerically integrate gyro data to calculate the yaw angle 
+/// @param void
+/// @return void
 void calculate_angle()
 {
   yawAngle += 0.5 * (yawData + get_rotation_data()) * (timer0_of_ms / 1e3);
 }
 
-// Interrupt handler for junction detection 
-// Parameters: void
-// Returns: void
+/// @brief Interrupt handler for junction detection 
+/// @param void
+/// @return void
 void jct_int_handler()
 {
   leftJctDetect = digitalRead(leftJctPin);
@@ -356,9 +358,9 @@ void jct_int_handler()
 
 }
 
-// PID calculator for line following
-// Parameters: int valAvg - averaged colour temperature reading, int* correct - pointer to correction variable
-// Returns: void
+/// @brief PID calculator for line following
+/// @param int valAvg - averaged colour temperature reading, int* correct - pointer to correction variable
+/// @return void
 void calculate_pid(int valAvg, int* correct)
 {
   int error = idealLightValue - valAvg;
@@ -372,9 +374,9 @@ void calculate_pid(int valAvg, int* correct)
   lastError = error;
 }
 
-// Decrements direction angle for a dummy clockwise rotation pattern
-// Parameters: uint8_t* newDirection - pointer to direction variable
-// Returns: void
+/// @brief Decrements direction angle for a dummy clockwise rotation pattern
+/// @param uint8_t* newDirection - pointer to direction variable
+/// @return void
 void get_next_turn_dummy_clockwise(uint8_t* newDirection)
 {
   //connect to pathfinding logic,
@@ -383,9 +385,9 @@ void get_next_turn_dummy_clockwise(uint8_t* newDirection)
   if (*newDirection == 255) *newDirection = 3;
 }
 
-// Increments direction angle for a dummy anticlockwise rotation pattern
-// Parameters: uint8_t* newDirection - pointer to direction variable
-// Returns: void
+/// @brief Increments direction angle for a dummy anticlockwise rotation pattern
+/// @param uint8_t* newDirection - pointer to direction variable
+/// @return void
 void get_next_turn_dummy_anticlockwise(uint8_t* newDirection)
 {
   //connect to pathfinding logic,
@@ -394,9 +396,9 @@ void get_next_turn_dummy_anticlockwise(uint8_t* newDirection)
   if (*newDirection > 3) *newDirection = 0;
 }
 
-// Updates direction angle with that of the next node, generated by the pathfinding.
-// Parameters: uint8_t* newDirection - pointer to direction variable
-// Returns: void
+/// @brief Updates direction angle with that of the next node, generated by the pathfinding.
+/// @param uint8_t* newDirection - pointer to direction variable
+/// @return void
 void get_next_turn(uint8_t* newDirection)
 {
   currNode ++;
@@ -424,9 +426,9 @@ void get_next_turn(uint8_t* newDirection)
 
 
 
-// Gets gyroscope data for numerical integration to calculate angle
-// Parameters: void
-// Returns: float
+/// @brief Gets z axis gyroscope data for numerical integration to calculate angle
+/// @param void
+/// @return float - z axis data
 float get_rotation_data()
 {
   float x, y, z;
@@ -437,9 +439,9 @@ float get_rotation_data()
   return z;
 }
 
-// Gets colour data from the colour sensor and averages by numAvgSamples
-// Parameters: void
-// Returns: uint16_t
+/// @brief Gets colour data from the colour sensor and averages by numAvgSamples
+/// @param void
+/// @return uint16_t
 uint16_t get_colour_data()
 {
   uint16_t r, g, b, c;
@@ -452,9 +454,9 @@ uint16_t get_colour_data()
   return int(valSum/numAvgSamples);
 }
 
-// Applies correction to the motor speeds to follow the line
-// Parameters: int correction - correction variable
-// Returns: void
+/// @brief Applies correction to the motor speeds to follow the line
+/// @param int correction - correction variable
+/// @return void
 void pid_motor_regulate(int correction)
 {
   if(insideEdge)
@@ -469,7 +471,9 @@ void pid_motor_regulate(int correction)
   }
 }
 
-
+/// @brief Runs PID line following for a certain time
+/// @param uint16_t timeout - how long to PID follow for
+/// @return void
 void delay_under_pid(uint16_t timeout)
 {
   unsigned long time1 = millis();
@@ -481,6 +485,9 @@ void delay_under_pid(uint16_t timeout)
     }
 }
 
+/// @brief Runs robot forwards blindly for a certain time
+/// @param uint16_t timeout - how long to move for, bool reverse - whether to run the motors forwards or in reverse.
+/// @return void
 void delay_under_manual(uint16_t timeout, bool reverse = false)
 {
   leftWheel->setSpeed(225);
@@ -504,6 +511,9 @@ void delay_under_manual(uint16_t timeout, bool reverse = false)
   rightWheel->setSpeed(0);
 }
 
+/// @brief Runs PID line following until a certain distance is met
+/// @param uint8_t threshold - distance in mm to line follow until
+/// @return void
 void distance_under_pid(uint8_t threshold)
 {
   unsigned long time = millis();
@@ -515,7 +525,9 @@ void distance_under_pid(uint8_t threshold)
    }
 }
 
-
+/// @brief Calculates the angle of rotation needed to turn to a specified direction
+/// @param uint8_t* currDirect - pointer to current direction variable, uint8_t* newDirect - pointer to the variable containing the new direction, int* desiredAngle - pointer to variable to fill with the required rotation angle.
+/// @return void
 void calculate_angle_to_rotate(uint8_t* currDirect, uint8_t* newDirect, int* desiredAngle) {
     *desiredAngle = (*currDirect - *newDirect);
     if(abs(*desiredAngle) == 3)
@@ -533,11 +545,12 @@ void calculate_angle_to_rotate(uint8_t* currDirect, uint8_t* newDirect, int* des
     LOG_NEWLINE(*desiredAngle);
 }
 
-
+/// @brief Sets the correct motor directions for rotating to a new direction.
+/// @param int* desAng - pointer to variable containing the rotation angle
+/// @return void
 void set_motor_directions(int* desAng)
 {
   int desiredAngle = *desAng;
-  //considered refactoring but this is a lot more readable.
   if(desiredAngle > 0)
   {
     LOG_NEWLINE("Rotating right");
@@ -554,11 +567,9 @@ void set_motor_directions(int* desAng)
 }
 
 
-//god i hate this function if only we had the imu :((((
-
-// Changes the direction of the robot to the specified new direction. Makes initial rotation manually before scanning for new line with the colour sensor
-// Parameters: uint8_t* newDirect - pointer to new direction variable
-// Returns: void
+/// @brief Changes the direction of the robot to the specified new direction. Makes initial rotation manually before scanning for new line with the colour sensor
+/// @param uint8_t* newDirect - pointer to new direction variable
+/// @return void
 void make_turn(uint8_t* newDirect)
 {
   LOG_INLINE("Turning, ");
@@ -569,14 +580,15 @@ void make_turn(uint8_t* newDirect)
   if(*newDirect == REVERSE)
   {
     //digitalWrite(redLedPin, HIGH);
+    //WORKAROUND - robot control parameters differ massively when in reverse due to flipped geometry. Kp -> 0 effectively disables PID while utilising existing loop.
     Kp = 0;
-    Kd = 0; //WORKAROUND - robot control parameters differ massively when in reverse due to flipped geometry. Kp -> 0 effectively disables PID while utilising existing loop.
+    Kd = 0; 
     leftWheel->run(BACKWARD);
     rightWheel->run(BACKWARD);
     leftWheel->setSpeed(210);
     rightWheel->setSpeed(200);
     delay(350);
-    forwardDelayTime = 200;
+    forwardDelayTime = 150;
     //insideEdge = false;
     //do not update currDirect to allow next turn to happen correctly.
   } 
@@ -584,7 +596,7 @@ void make_turn(uint8_t* newDirect)
   {
     //insideEdge = true;
     Kp = 0.2; //when not reversing, ensure Kp is always set to the appropriate value.
-    Kd = 0.15;
+    Kd = 0.2;
     if (*newDirect == FINISH)
     {
       finishedRun = true;
@@ -601,6 +613,7 @@ void make_turn(uint8_t* newDirect)
     
     calculate_angle_to_rotate(&currDirect, newDirect, &desiredAngle);
     
+    //WORKAROUND - wheel slip when reversing, we move forwards less as a result.
     if(abs(desiredAngle) > 90)
     {
       delay_under_manual(240); //move forward until pivot hit
@@ -620,6 +633,8 @@ void make_turn(uint8_t* newDirect)
       //currDirect = *newDirect; direction remains same
       return; //skip rotation if going straight
     }
+    
+    //WORKAROUND - colour sensor can lose the correct edge in certain circumstances. We use logic to alternate the edge followed.
     #if EDGE_FLIPPING
     if(insideEdge)
     {
@@ -640,13 +655,13 @@ void make_turn(uint8_t* newDirect)
     leftWheel->setSpeed(140);
     rightWheel->setSpeed(140);
     
+    //WORKAROND - Motor stalls after extended period of rotation at 120, we increase this to 150 for 180 degree turns. 
     if(abs(desiredAngle) > 90)
     {
       leftWheel->setSpeed(150);
       rightWheel->setSpeed(150);
     }
     
-    //WORKAROND - Motor stalls after extended period of rotation at 120, we increase this to 150 for 180 degree turns. 
 
     //WORKAROUND - IMU unavailable so we use the colour sensor to detect when we've reached the line again. 
     for(int i = 0; i < abs(desiredAngle); i+=90) //for loop will run this a second time to complete 180 degree turns correctly.
@@ -667,11 +682,12 @@ void make_turn(uint8_t* newDirect)
     rightWheel->run(FORWARD);
     currDirect = *newDirect; //orientation does not change in reverse.
     avgMotorSpeed = 220;
-    forwardDelayTime = 300;
-    jctDetectTime = millis();
+    forwardDelayTime = 280;
+    jctDetectTime = millis(); 
   }
-
 }
+
+
 uint8_t nextClosestBlock(int distance[numVert], uint8_t blockIndices[], status blockStatus[numBlocks]) {
     if (blocksCollected == numBlocks) {
         return 0;
@@ -688,13 +704,23 @@ uint8_t nextClosestBlock(int distance[numVert], uint8_t blockIndices[], status b
     //WORKAROUND - one of the nodes is way longer than the others
     if(blockIndices[closestBlockIndex] == 14)
     {
-      wall_threshold_mm = 60;
-      distance_pid_timeout = 2300;
+      wall_threshold_mm = 50;
+      distance_pid_timeout = 2900;
     }
-    else
+    else if(blockIndices[closestBlockIndex] == 17)
     {
-      wall_threshold_mm = 90;
-      distance_pid_timeout = 1400;
+      wall_threshold_mm = 50;
+      distance_pid_timeout = 1800;
+    }
+    else if(blockIndices[closestBlockIndex] == 12)
+    {
+      wall_threshold_mm = 50;
+      distance_pid_timeout = 800;
+    }
+    else if(blockIndices[closestBlockIndex] == 7 || blockIndices[closestBlockIndex] == 0)
+    {
+      wall_threshold_mm = 50;
+      distance_pid_timeout = 1100;
     }
     return blockIndices[closestBlockIndex];
 }
@@ -716,10 +742,24 @@ void start_new_journey(uint8_t* sourceNode, uint8_t* destinationNode, uint8_t* n
 void celebrate_and_finish() {
 //PID impossible due to geometry of starting region, so we manually drive until we cross the threshold.
       leftWheel->setSpeed(140);
-      rightWheel->setSpeed(140);
+      rightWheel->setSpeed(150);
       delay(1300); //calibrate for however long it takes to cross the threshold.
       leftWheel->setSpeed(0);
       rightWheel->setSpeed(0);
+
+      delay(1000);
+      leftWheel->run(BACKWARD);
+      rightWheel->run(FORWARD);
+      leftWheel->setSpeed(140);
+      rightWheel->setSpeed(140);
+
+      delay(400);
+
+      leftWheel->setSpeed(0);
+      rightWheel->setSpeed(0);
+      wdt_disable();
+      wdt_enable(WDTO_15MS);
+
       while(1); //We're now finished, infinite loop until power turned off.
 
       //IF WE HAVE TIME - ADD A LITTLE LIGHT SHOW??

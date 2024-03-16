@@ -6,7 +6,10 @@
 	],
 	"settings": {
 		"files.associations": {
-			"wiring_private.h": "c"
+			"wiring_private.h": "c",
+			"arduino.h": "c",
+			"io.h": "c",
+			"portpins.h": "c"
 		}
 	}
 }
