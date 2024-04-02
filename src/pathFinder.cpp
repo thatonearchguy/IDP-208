@@ -41,6 +41,7 @@ void returnPath(int parent[numVert], int j, int bestPath[numVert], int *index)
 }
 
 void returnDirection(node graph[numVert][numVert], int bestPath[numVert], direction bestPathDirections[numVert]) {
+    
     for (int i = 0; i < numVert-1; i++) {
         bestPathDirections[i] = graph[bestPath[i]][bestPath[i+1]].direction;
     }
